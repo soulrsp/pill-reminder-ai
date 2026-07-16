@@ -80,13 +80,17 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     let state = {
-        pills: [],
+        profiles: [],
+        activeProfileId: "",
+        pills: {},
         intakeRecords: {},
-        chatLogs: [],
+        chatLogs: {},
         notifiedDoses: {}
     };
 
     const STORAGE_KEYS = {
+        PROFILES: 'pillflow_profiles',
+        ACTIVE_PROFILE_ID: 'pillflow_active_profile_id',
         PILLS: 'pillflow_pills',
         INTAKE_RECORDS: 'pillflow_intake_records',
         CHAT_LOGS: 'pillflow_chat_logs',
@@ -97,17 +101,90 @@ document.addEventListener('DOMContentLoaded', () => {
     let activePillAlarm = null;
     let snoozeTimers = {};
 
+    function getInitialChatMessages(profileName) {
+        return [
+            {
+                sender: "bot",
+                message: `안녕하세요, <strong>${profileName}</strong> 님! 복용 중인 의약품에 관한 질문을 무엇이든 받아드릴 수 있는 <strong>PillFlow AI 복용 비서</strong>입니다.💊<br>예를 들어, "감기약과 타이레놀을 같이 먹어도 되나요?" 또는 "홍삼과 오메가3의 상호작용은 어때요?" 와 같이 질문해 주세요!`,
+                timestamp: getFormattedTime()
+            },
+            {
+                sender: "user",
+                message: "오메가3는 꼭 밥 먹고 바로 먹어야 할까요?",
+                timestamp: getFormattedTime()
+            },
+            {
+                sender: "bot",
+                message: "네, <strong>오메가3는 꼭 식후에 드시는 것이 좋습니다!</strong><br><br>1. <strong>흡수율 극대화:</strong> 오메가3는 지용성 기름이기 때문에 위산보다는 식사 시 분비되는 췌장 소화액(리파아제)과 담즙산이 있어야 체내에 원활하게 흡수됩니다. 지방이 함유된 식사 후에 드시면 공복 대비 흡수율이 최대 2~3배까지 올라갑니다.<br>2. <strong>위장 장애 방지:</strong> 공복에 드시면 특유의 비린내(어취)가 올라오거나 메스꺼움, 설사, 속쓰림 등의 위장 장애 증상이 발생하기 쉽습니다. 식사 직후 또는 식사 중간에 섭취하시는 것이 가장 부작용을 줄일 수 있는 방법입니다!",
+                timestamp: getFormattedTime()
+            }
+        ];
+    }
+
     // ==========================================
     // 2. Storage Sync functions
     // ==========================================
     function loadState() {
-        state.pills = JSON.parse(localStorage.getItem(STORAGE_KEYS.PILLS)) || defaultPills;
-        state.intakeRecords = JSON.parse(localStorage.getItem(STORAGE_KEYS.INTAKE_RECORDS)) || {};
-        state.chatLogs = JSON.parse(localStorage.getItem(STORAGE_KEYS.CHAT_LOGS)) || defaultChatMessages;
-        state.notifiedDoses = JSON.parse(localStorage.getItem(STORAGE_KEYS.NOTIFIED_DOSES)) || {};
+        let profiles = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROFILES));
+        let activeProfileId = localStorage.getItem(STORAGE_KEYS.ACTIVE_PROFILE_ID);
+        
+        let rawPills = localStorage.getItem(STORAGE_KEYS.PILLS);
+        let rawIntake = localStorage.getItem(STORAGE_KEYS.INTAKE_RECORDS);
+        let rawChat = localStorage.getItem(STORAGE_KEYS.CHAT_LOGS);
+        let rawNotified = localStorage.getItem(STORAGE_KEYS.NOTIFIED_DOSES);
+        
+        let parsedPills = rawPills ? JSON.parse(rawPills) : null;
+        let parsedIntake = rawIntake ? JSON.parse(rawIntake) : null;
+        let parsedChat = rawChat ? JSON.parse(rawChat) : null;
+        let parsedNotified = rawNotified ? JSON.parse(rawNotified) : null;
+
+        let needsMigration = false;
+        if (parsedPills && Array.isArray(parsedPills)) {
+            needsMigration = true;
+        } else if (parsedChat && Array.isArray(parsedChat)) {
+            needsMigration = true;
+        } else if (parsedIntake && !parsedIntake["prof-default"] && Object.keys(parsedIntake).some(k => !k.startsWith("prof-"))) {
+            needsMigration = true;
+        }
+
+        if (needsMigration) {
+            state.profiles = profiles || [{ id: "prof-default", name: "기본 사용자", avatarColor: "#6366f1" }];
+            state.activeProfileId = activeProfileId || "prof-default";
+            
+            state.pills = {};
+            state.pills["prof-default"] = Array.isArray(parsedPills) ? parsedPills : defaultPills;
+            
+            state.intakeRecords = {};
+            state.intakeRecords["prof-default"] = (parsedIntake && !parsedIntake["prof-default"]) ? parsedIntake : {};
+            
+            state.chatLogs = {};
+            state.chatLogs["prof-default"] = (parsedChat && Array.isArray(parsedChat)) ? parsedChat : getInitialChatMessages("기본 사용자");
+            
+            state.notifiedDoses = {};
+            state.notifiedDoses["prof-default"] = (parsedNotified && !parsedNotified["prof-default"]) ? parsedNotified : {};
+            
+            saveState();
+        } else {
+            state.profiles = profiles || [{ id: "prof-default", name: "기본 사용자", avatarColor: "#6366f1" }];
+            state.activeProfileId = activeProfileId || "prof-default";
+            
+            state.pills = parsedPills || { "prof-default": defaultPills };
+            state.intakeRecords = parsedIntake || {};
+            state.chatLogs = parsedChat || { "prof-default": getInitialChatMessages("기본 사용자") };
+            state.notifiedDoses = parsedNotified || {};
+            
+            state.profiles.forEach(p => {
+                if (!state.pills[p.id]) state.pills[p.id] = (p.id === "prof-default" ? defaultPills : []);
+                if (!state.intakeRecords[p.id]) state.intakeRecords[p.id] = {};
+                if (!state.chatLogs[p.id]) state.chatLogs[p.id] = getInitialChatMessages(p.name);
+                if (!state.notifiedDoses[p.id]) state.notifiedDoses[p.id] = {};
+            });
+        }
     }
 
     function saveState() {
+        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(state.profiles));
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, state.activeProfileId);
         localStorage.setItem(STORAGE_KEYS.PILLS, JSON.stringify(state.pills));
         localStorage.setItem(STORAGE_KEYS.INTAKE_RECORDS, JSON.stringify(state.intakeRecords));
         localStorage.setItem(STORAGE_KEYS.CHAT_LOGS, JSON.stringify(state.chatLogs));
@@ -148,18 +225,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. Daily Schedule Generator
     // ==========================================
     function initTodaySchedule() {
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
         const todayStr = getTodayString();
         
-        if (!state.intakeRecords[todayStr]) {
-            state.intakeRecords[todayStr] = [];
+        if (!state.intakeRecords[activeProfileId]) {
+            state.intakeRecords[activeProfileId] = {};
+        }
+        
+        if (!state.intakeRecords[activeProfileId][todayStr]) {
+            state.intakeRecords[activeProfileId][todayStr] = [];
             
-            state.pills.forEach(pill => {
+            const profilePills = state.pills[activeProfileId] || [];
+            profilePills.forEach(pill => {
                 if (pill.frequency === 'as-needed') return;
                 
                 const times = getScheduleTimes(pill.frequency);
                 times.forEach(time => {
                     const doseId = `dose-${pill.id}-${time}`;
-                    state.intakeRecords[todayStr].push({
+                    state.intakeRecords[activeProfileId][todayStr].push({
                         id: doseId,
                         pillId: pill.id,
                         name: pill.name,
@@ -172,10 +257,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
             
-            state.intakeRecords[todayStr].sort((a, b) => a.time.localeCompare(b.time));
+            state.intakeRecords[activeProfileId][todayStr].sort((a, b) => a.time.localeCompare(b.time));
             
-            if (!state.notifiedDoses[todayStr]) {
-                state.notifiedDoses[todayStr] = {};
+            if (!state.notifiedDoses[activeProfileId]) {
+                state.notifiedDoses[activeProfileId] = {};
+            }
+            if (!state.notifiedDoses[activeProfileId][todayStr]) {
+                state.notifiedDoses[activeProfileId][todayStr] = {};
             }
             
             saveState();
@@ -238,9 +326,11 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.classList.add('show');
         
         setTimeout(() => {
-            toast.classList.remove('show');
-            toast.addEventListener('transitionend', () => toast.remove());
-        }, 3000);
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            toast.style.transition = 'all 0.5s ease-in-out';
+            setTimeout(() => toast.remove(), 500);
+        }, 5000);
     }
 
     // ==========================================
@@ -285,6 +375,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 7. Dashboard Rendering
     // ==========================================
     function renderDashboard() {
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
         const todayStr = getTodayString();
         
         const todayDateEl = document.getElementById('today-date');
@@ -292,7 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
             todayDateEl.textContent = getKoreanDateString(todayStr);
         }
         
-        const todayDoses = state.intakeRecords[todayStr] || [];
+        const todayDoses = (state.intakeRecords[activeProfileId] && state.intakeRecords[activeProfileId][todayStr]) || [];
         const totalDoses = todayDoses.length;
         const completedDoses = todayDoses.filter(d => d.status === 'taken').length;
         const remainingDoses = totalDoses - completedDoses;
@@ -407,8 +500,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function toggleDoseStatus(doseId, isChecked) {
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
         const todayStr = getTodayString();
-        const doses = state.intakeRecords[todayStr] || [];
+        const doses = (state.intakeRecords[activeProfileId] && state.intakeRecords[activeProfileId][todayStr]) || [];
         const dose = doses.find(d => d.id === doseId);
         if (!dose) return;
         
@@ -418,7 +514,8 @@ document.addEventListener('DOMContentLoaded', () => {
         dose.status = newStatus;
         
         // Decrement / Increment from Cabinet Quantity
-        const pill = state.pills.find(p => p.id === dose.pillId);
+        const profilePills = state.pills[activeProfileId] || [];
+        const pill = profilePills.find(p => p.id === dose.pillId);
         if (pill) {
             const dosageMatch = pill.dosage.match(/(\d+(?:\.\d+)?)/);
             const qtyDiff = dosageMatch ? parseFloat(dosageMatch[1]) : 1;
@@ -633,19 +730,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveAnalyzedSchedule() {
         if (tempAnalyzedPills.length === 0) return;
         
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
         const todayStr = getTodayString();
         
+        if (!state.pills[activeProfileId]) state.pills[activeProfileId] = [];
+        if (!state.intakeRecords[activeProfileId]) state.intakeRecords[activeProfileId] = {};
+        
         tempAnalyzedPills.forEach(pill => {
-            state.pills.push(pill);
+            state.pills[activeProfileId].push(pill);
             
             if (pill.frequency === 'as-needed') return;
             
             const times = getScheduleTimes(pill.frequency);
             times.forEach(time => {
                 const doseId = `dose-${pill.id}-${time}`;
-                if (!state.intakeRecords[todayStr]) state.intakeRecords[todayStr] = [];
+                if (!state.intakeRecords[activeProfileId][todayStr]) {
+                    state.intakeRecords[activeProfileId][todayStr] = [];
+                }
                 
-                state.intakeRecords[todayStr].push({
+                state.intakeRecords[activeProfileId][todayStr].push({
                     id: doseId,
                     pillId: pill.id,
                     name: pill.name,
@@ -658,8 +763,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        if (state.intakeRecords[todayStr]) {
-            state.intakeRecords[todayStr].sort((a, b) => a.time.localeCompare(b.time));
+        if (state.intakeRecords[activeProfileId][todayStr]) {
+            state.intakeRecords[activeProfileId][todayStr].sort((a, b) => a.time.localeCompare(b.time));
         }
         
         saveState();
@@ -691,6 +796,9 @@ document.addEventListener('DOMContentLoaded', () => {
         pillForm.addEventListener('submit', (e) => {
             e.preventDefault();
             
+            const activeProfileId = state.activeProfileId;
+            if (!activeProfileId) return;
+            
             const name = document.getElementById('pill-name-input').value.trim();
             const dosage = document.getElementById('pill-dosage-input').value.trim();
             const frequency = document.getElementById('pill-freq-select').value;
@@ -707,7 +815,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 expiryDate
             };
             
-            state.pills.push(newPill);
+            if (!state.pills[activeProfileId]) state.pills[activeProfileId] = [];
+            state.pills[activeProfileId].push(newPill);
             
             // Instantly append to today's schedule if it's scheduled frequency
             if (frequency !== 'as-needed') {
@@ -715,9 +824,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const times = getScheduleTimes(frequency);
                 times.forEach(time => {
                     const doseId = `dose-${newPill.id}-${time}`;
-                    if (!state.intakeRecords[todayStr]) state.intakeRecords[todayStr] = [];
+                    if (!state.intakeRecords[activeProfileId]) {
+                        state.intakeRecords[activeProfileId] = {};
+                    }
+                    if (!state.intakeRecords[activeProfileId][todayStr]) {
+                        state.intakeRecords[activeProfileId][todayStr] = [];
+                    }
                     
-                    state.intakeRecords[todayStr].push({
+                    state.intakeRecords[activeProfileId][todayStr].push({
                         id: doseId,
                         pillId: newPill.id,
                         name: newPill.name,
@@ -728,7 +842,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         status: 'pending'
                     });
                 });
-                state.intakeRecords[todayStr].sort((a, b) => a.time.localeCompare(b.time));
+                state.intakeRecords[activeProfileId][todayStr].sort((a, b) => a.time.localeCompare(b.time));
             }
             
             saveState();
@@ -741,14 +855,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderCabinet() {
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
+        const profilePills = state.pills[activeProfileId] || [];
+        
         const cabinetTotalBadge = document.getElementById('cabinet-total-badge');
         if (cabinetTotalBadge) {
-            cabinetTotalBadge.textContent = `보유 약품: ${state.pills.length}종`;
+            cabinetTotalBadge.textContent = `보유 약품: ${profilePills.length}종`;
         }
         
         const cabinetGridEl = document.getElementById('cabinet-grid');
         if (cabinetGridEl) {
-            if (state.pills.length === 0) {
+            if (profilePills.length === 0) {
                 cabinetGridEl.innerHTML = `
                     <div class="results-placeholder" style="grid-column: span 2; padding: 60px 0;">
                         <i class="fa-solid fa-prescription-bottle-medical placeholder-icon" style="font-size: 48px; margin-bottom: 16px;"></i>
@@ -758,7 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            cabinetGridEl.innerHTML = state.pills.map(pill => {
+            cabinetGridEl.innerHTML = profilePills.map(pill => {
                 const isWarning = pill.currentQty < 10;
                 const badgeClass = isWarning ? 'warning' : 'normal';
                 const badgeText = isWarning ? '수량 부족!' : '보유 중';
@@ -840,15 +959,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function deletePill(pillId) {
-        const pill = state.pills.find(p => p.id === pillId);
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
+        const profilePills = state.pills[activeProfileId] || [];
+        const pill = profilePills.find(p => p.id === pillId);
         if (!pill) return;
         
         if (confirm(`보관함에서 '${pill.name}'을 삭제하시겠습니까? 오늘 복용 예정인 미완료 일정도 함께 삭제됩니다.`)) {
-            state.pills = state.pills.filter(p => p.id !== pillId);
+            state.pills[activeProfileId] = profilePills.filter(p => p.id !== pillId);
             
             const todayStr = getTodayString();
-            if (state.intakeRecords[todayStr]) {
-                state.intakeRecords[todayStr] = state.intakeRecords[todayStr].filter(d => !(d.pillId === pillId && d.status !== 'taken'));
+            if (state.intakeRecords[activeProfileId] && state.intakeRecords[activeProfileId][todayStr]) {
+                state.intakeRecords[activeProfileId][todayStr] = state.intakeRecords[activeProfileId][todayStr].filter(d => !(d.pillId === pillId && d.status !== 'taken'));
             }
             
             saveState();
@@ -897,7 +1020,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         {
             keywords: ["홍삼", "오메가3", "궁합", "같이"],
-            response: "🌿 <strong>홍삼과 오메가3 병용 섭취 안내</strong><br><br>홍삼과 오메가3는 일반적으로 함께 섭취해도 괜찮은 조합입니다.<br>다만 두 영양제 성분 모두 <strong>혈행 개선(피를 맑게 하고 혈소판 응집을 억제)</strong> 기능이 우수합니다. 이에 따라 <strong>혈압약, 아스피린, 항응고제(와파린 등)</strong>를 드시는 중이거나, <strong>치과 치료 및 큰 수술</strong>을 앞두고 계신 경우라면 지혈이 지연될 위험이 있습니다. 만약 처방된 혈액 관리 약물을 드시는 중이라면 사전에 주치의와 상의하시는 것을 권장합니다."
+            response: "🌿 <strong>홍삼과 오메가3 병용 섭섭취 안내</strong><br><br>홍삼과 오메가3는 일반적으로 함께 섭취해도 괜찮은 조합입니다.<br>다만 두 영양제 성분 모두 <strong>혈행 개선(피를 맑게 하고 혈소판 응집을 억제)</strong> 기능이 우수합니다. 이에 따라 <strong>혈압약, 아스피린, 항응고제(와파린 등)</strong>를 드시는 중이거나, <strong>치과 치료 및 큰 수술</strong>을 앞두고 계신 경우라면 지혈이 지연될 위험이 있습니다. 만약 처방된 혈액 관리 약물을 드시는 중이라면 사전에 주치의와 상의하시는 것을 권장합니다."
         }
     ];
 
@@ -930,7 +1053,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const chatMessagesEl = document.getElementById('chat-messages');
         if (!chatMessagesEl) return;
         
-        chatMessagesEl.innerHTML = state.chatLogs.map(log => {
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
+        const profileChatLogs = state.chatLogs[activeProfileId] || [];
+        
+        chatMessagesEl.innerHTML = profileChatLogs.map(log => {
             const isBot = log.sender === 'bot';
             
             if (isBot) {
@@ -965,10 +1093,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendUserMessage() {
         if (!chatInput) return;
         
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
         const messageText = chatInput.value.trim();
         if (!messageText) return;
         
-        state.chatLogs.push({
+        if (!state.chatLogs[activeProfileId]) state.chatLogs[activeProfileId] = [];
+        
+        state.chatLogs[activeProfileId].push({
             sender: 'user',
             message: messageText,
             timestamp: getFormattedTime()
@@ -984,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
             removeTypingIndicator();
             const botReply = getBotReply(messageText);
             
-            state.chatLogs.push({
+            state.chatLogs[activeProfileId].push({
                 sender: 'bot',
                 message: botReply,
                 timestamp: getFormattedTime()
@@ -1088,11 +1221,11 @@ document.addEventListener('DOMContentLoaded', () => {
         closeAlarmModal();
     }
 
+    // Snooze Alarm
     function handleTakeSnooze() {
         if (!activePillAlarm) return;
         
         const doseId = activePillAlarm.id;
-        // Snooze for 5 minutes (5 * 60 * 1000 ms)
         snoozeTimers[doseId] = Date.now() + 5 * 60 * 1000;
         
         showToast(`${activePillAlarm.name}의 알림을 5분 후로 설정했습니다.`, 'info');
@@ -1100,8 +1233,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function checkSchedule() {
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+        
         const todayStr = getTodayString();
-        const todayDoses = state.intakeRecords[todayStr] || [];
+        const todayDoses = (state.intakeRecords[activeProfileId] && state.intakeRecords[activeProfileId][todayStr]) || [];
         
         const now = new Date();
         const currentHour = String(now.getHours()).padStart(2, '0');
@@ -1109,25 +1245,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentTimeStr = `${currentHour}:${currentMinute}`;
         const nowMs = now.getTime();
         
-        if (!state.notifiedDoses[todayStr]) {
-            state.notifiedDoses[todayStr] = {};
+        if (!state.notifiedDoses[activeProfileId]) {
+            state.notifiedDoses[activeProfileId] = {};
+        }
+        if (!state.notifiedDoses[activeProfileId][todayStr]) {
+            state.notifiedDoses[activeProfileId][todayStr] = {};
         }
         
         todayDoses.forEach(dose => {
             if (dose.status === 'taken') return;
             
-            // Check time match and not notified today yet
             const isTimeMatch = dose.time === currentTimeStr;
-            const isAlreadyNotified = state.notifiedDoses[todayStr][dose.id];
+            const isAlreadyNotified = state.notifiedDoses[activeProfileId][todayStr][dose.id];
             
-            // Check snooze timer
             const snoozeTime = snoozeTimers[dose.id];
             const isSnoozeTrigger = snoozeTime && nowMs >= snoozeTime;
             
             if ((isTimeMatch && !isAlreadyNotified) || isSnoozeTrigger) {
                 triggerAlarm(dose);
                 
-                state.notifiedDoses[todayStr][dose.id] = true;
+                state.notifiedDoses[activeProfileId][todayStr][dose.id] = true;
                 
                 if (isSnoozeTrigger) {
                     delete snoozeTimers[dose.id];
@@ -1139,19 +1276,176 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // 12. App Initialization
+    // 12. Multi-Profile Management Logic & Bindings
+    // ==========================================
+    function createProfile(name, color) {
+        const newId = `prof-${Date.now()}`;
+        const newProfile = {
+            id: newId,
+            name: name,
+            avatarColor: color
+        };
+        
+        state.profiles.push(newProfile);
+        state.pills[newId] = [];
+        state.intakeRecords[newId] = {};
+        state.chatLogs[newId] = getInitialChatMessages(name);
+        state.notifiedDoses[newId] = {};
+        
+        saveState();
+        
+        showToast(`새 프로필 "${name}"이(가) 추가되었습니다.`, 'success');
+        switchProfile(newId);
+    }
+    
+    function switchProfile(profileId) {
+        const activeProfile = state.profiles.find(p => p.id === profileId);
+        if (!activeProfile) return;
+        
+        state.activeProfileId = profileId;
+        saveState();
+        
+        const activeProfileNameEl = document.getElementById('profile-current-name');
+        if (activeProfileNameEl) {
+            activeProfileNameEl.textContent = `${activeProfile.name} 님`;
+        }
+        
+        const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
+        if (activeProfileAvatarEl) {
+            activeProfileAvatarEl.style.color = activeProfile.avatarColor;
+        }
+        
+        initTodaySchedule();
+        
+        renderDashboard();
+        renderCabinet();
+        renderChat();
+        renderProfileList();
+        
+        showToast(`"${activeProfile.name}" 프로필로 전환되었습니다.`, 'info');
+    }
+
+    function renderProfileList() {
+        const profileListEl = document.getElementById('profile-list');
+        if (!profileListEl) return;
+        
+        profileListEl.innerHTML = state.profiles.map(p => {
+            const isActive = p.id === state.activeProfileId;
+            return `
+                <div class="profile-item ${isActive ? 'active' : ''}" data-id="${p.id}">
+                    <div class="profile-item-avatar" style="background-color: ${p.avatarColor};">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <span class="profile-item-name">${p.name}</span>
+                </div>
+            `;
+        }).join('');
+        
+        const profileItems = profileListEl.querySelectorAll('.profile-item');
+        profileItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const profileId = item.getAttribute('data-id');
+                switchProfile(profileId);
+                const dropdown = document.getElementById('profile-dropdown');
+                if (dropdown) dropdown.classList.add('hidden');
+            });
+        });
+    }
+
+    // Profile Dropdown Toggle
+    const profileArea = document.getElementById('profile-area');
+    const profileDropdown = document.getElementById('profile-dropdown');
+    
+    if (profileArea && profileDropdown) {
+        profileArea.addEventListener('click', (e) => {
+            e.stopPropagation();
+            profileDropdown.classList.toggle('hidden');
+        });
+        
+        document.addEventListener('click', () => {
+            profileDropdown.classList.add('hidden');
+        });
+    }
+
+    // Profile Creation Modal Trigger & Controls
+    const btnAddProfile = document.getElementById('btn-add-profile');
+    const profileModal = document.getElementById('profile-modal');
+    const btnCancelProfile = document.getElementById('btn-cancel-profile');
+    const btnCreateProfile = document.getElementById('btn-create-profile');
+    const newProfileNameInput = document.getElementById('new-profile-name');
+    const colorPresets = document.querySelectorAll('.color-preset-btn');
+    
+    let selectedColor = "#6366f1";
+    
+    if (btnAddProfile && profileModal) {
+        btnAddProfile.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (newProfileNameInput) newProfileNameInput.value = "";
+            colorPresets.forEach(preset => {
+                preset.classList.remove('active');
+                if (preset.getAttribute('data-color') === "#6366f1") {
+                    preset.classList.add('active');
+                }
+            });
+            selectedColor = "#6366f1";
+            profileModal.classList.remove('hidden');
+            if (profileDropdown) profileDropdown.classList.add('hidden');
+        });
+    }
+    
+    if (btnCancelProfile && profileModal) {
+        btnCancelProfile.addEventListener('click', () => {
+            profileModal.classList.add('hidden');
+        });
+    }
+    
+    colorPresets.forEach(preset => {
+        preset.addEventListener('click', () => {
+            colorPresets.forEach(p => p.classList.remove('active'));
+            preset.classList.add('active');
+            selectedColor = preset.getAttribute('data-color');
+        });
+    });
+    
+    if (btnCreateProfile) {
+        btnCreateProfile.addEventListener('click', () => {
+            const name = newProfileNameInput.value.trim();
+            if (!name) {
+                showToast("프로필 이름을 입력해 주세요.", "warning");
+                return;
+            }
+            createProfile(name, selectedColor);
+            profileModal.classList.add('hidden');
+        });
+    }
+
+    // ==========================================
+    // 13. App Initialization
     // ==========================================
     loadState();
     initTodaySchedule();
     saveState();
     
+    // Set initially active profile header details
+    const initialActiveProfile = state.profiles.find(p => p.id === state.activeProfileId);
+    if (initialActiveProfile) {
+        const activeProfileNameEl = document.getElementById('profile-current-name');
+        if (activeProfileNameEl) activeProfileNameEl.textContent = `${initialActiveProfile.name} 님`;
+        
+        const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
+        if (activeProfileAvatarEl) activeProfileAvatarEl.style.color = initialActiveProfile.avatarColor;
+    }
+    
     // First render
     renderDashboard();
     renderCabinet();
     renderChat();
+    renderProfileList();
 
     // Start 10-second check loop
     setInterval(checkSchedule, 10000);
 
     console.log("PillFlow AI Initialized.");
 });
+
