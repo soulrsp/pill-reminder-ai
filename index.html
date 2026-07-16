@@ -21,8 +21,11 @@
                 <div class="logo-icon"><i class="fa-solid fa-droplet-slash"></i></div>
                 <div class="logo-text">PillFlow <span>AI</span></div>
             </div>
+            <div id="sync-status-banner" class="sync-status-banner hidden">
+                <i class="fa-solid fa-circle sync-icon"></i>
+                <span>LIVE 동기화 중</span>
+            </div>
             
-
             <nav class="nav-menu">
                 <a href="#dashboard" class="nav-item active" data-target="dashboard-view">
                     <i class="fa-solid fa-house-chimney"></i>
@@ -56,7 +59,9 @@
                     <div id="profile-list" class="profile-list">
                         <!-- Dynamic list of profiles will be loaded here -->
                     </div>
-
+                    <button id="btn-copy-share-link" class="btn-copy-share-link" type="button">
+                        <i class="fa-solid fa-link"></i> 🔗 실시간 공유 링크 복사
+                    </button>
                     <button id="btn-add-profile" class="btn-add-profile" type="button">
                         <i class="fa-solid fa-user-plus"></i> 새 프로필 추가
                     </button>
