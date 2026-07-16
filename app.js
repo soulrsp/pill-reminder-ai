@@ -199,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveToCloud() {
         if (!currentRoomId) return;
-        const url = `https://kvdb.io/C8qDuyb1uQZ1J9h7Bq4mR7/${currentRoomId}`;
+        const url = `https://kvdb.io/Sf98ZTAnze7jR199cZxpRm/${currentRoomId}`;
         const payload = {
             state: state,
             timestamp: Date.now()
@@ -224,7 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadFromCloud() {
         if (!currentRoomId || isSyncing) return;
         isSyncing = true;
-        const url = `https://kvdb.io/C8qDuyb1uQZ1J9h7Bq4mR7/${currentRoomId}`;
+        const url = `https://kvdb.io/Sf98ZTAnze7jR199cZxpRm/${currentRoomId}`;
         try {
             const response = await fetch(url);
             if (response.status === 404) {
