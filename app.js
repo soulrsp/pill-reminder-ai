@@ -197,9 +197,9 @@ document.addEventListener('DOMContentLoaded', () => {
         saveToCloud();
     }
 
-    const FIREBASE_DB_URL = 'https://pill-reminder-ai-43ffa-default-rtdb.asia-southeast1.firebasedatabase.app';
+        const FIREBASE_DB_URL = 'https://pill-reminder-ai-43ffa-default-rtdb.asia-southeast1.firebasedatabase.app';
 
-    // ── 이미지 자동 압축 (최대 200×200px, JPEG 품질 70%) ──
+    // ── 이미지 파일 자동 압축 (최대 200×200px, JPEG 품질 70%) ──
     function compressImage(file, maxWidth, maxHeight, quality) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -227,19 +227,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ── Firebase 사진 저장 (프로필별 별도 경로) ──
+    // ── Base64 이미지 스트링 직접 압축 (안전성 강화) ──
+    function compressBase64Image(base64Str, maxWidth, maxHeight, quality) {
+        return new Promise((resolve, reject) => {
+            if (!base64Str) return resolve(null);
+            if (!base64Str.startsWith('data:image')) {
+                return resolve(base64Str);
+            }
+            const img = new Image();
+            img.onload = () => {
+                let w = img.width, h = img.height;
+                if (w > maxWidth || h > maxHeight) {
+                    const ratio = Math.min(maxWidth / w, maxHeight / h);
+                    w = Math.round(w * ratio);
+                    h = Math.round(h * ratio);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = (err) => reject(err);
+            img.src = base64Str;
+        });
+    }
+
+    // ── Firebase 사진 저장 (프로필별 별도 경로 + 강제 압축) ──
     async function savePhotoToCloud(profileId, base64Image) {
-        if (!currentRoomId) return;
+        if (!currentRoomId || !base64Image) return;
         try {
+            console.log(`[Photo Sync] Compressing photo for ${profileId} before upload...`);
+            const compressed = await compressBase64Image(base64Image, 150, 150, 0.6);
             const url = `${FIREBASE_DB_URL}/rooms/${encodeURIComponent(currentRoomId)}/photos/${encodeURIComponent(profileId)}.json`;
-            const body = JSON.stringify({ img: base64Image || null, ts: Date.now() });
-            await fetch(url, {
+            const body = JSON.stringify({ img: compressed, ts: Date.now() });
+            
+            const response = await fetch(url, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body
             });
+            if (response.ok) {
+                console.log(`[Photo Sync] Photo successfully uploaded for ${profileId}`);
+            } else {
+                console.error('[Photo Sync] Upload failed:', response.status, await response.text());
+            }
         } catch (e) {
-            console.error('Firebase photo save error:', e);
+            console.error('[Photo Sync] Save error:', e);
         }
     }
 
@@ -258,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (entry && entry.img !== profile.avatarImage) {
                     profile.avatarImage = entry.img;
                     changed = true;
+                    console.log(`[Photo Sync] Profile photo updated for ${profile.name}`);
                 }
             });
             if (changed) {
@@ -278,6 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }
+                renderDashboard(); // 대시보드 리스트 내 프로필 이미지 리렌더링 유도
             }
         } catch (e) {
             console.error('Firebase photo load error:', e);
