@@ -22,11 +22,7 @@
                 <div class="logo-text">PillFlow <span>AI</span></div>
             </div>
             
-            <div id="sync-status-banner" class="sync-status-banner hidden">
-                <i class="fa-solid fa-circle sync-icon"></i>
-                <span>LIVE 동기화 중</span>
-            </div>
-            
+
             <nav class="nav-menu">
                 <a href="#dashboard" class="nav-item active" data-target="dashboard-view">
                     <i class="fa-solid fa-house-chimney"></i>
@@ -57,9 +53,7 @@
                     <div id="profile-list" class="profile-list">
                         <!-- Dynamic list of profiles will be loaded here -->
                     </div>
-                    <button id="btn-copy-share-link" class="btn-copy-share-link" type="button">
-                        <i class="fa-solid fa-link"></i> 🔗 실시간 공유 링크 복사
-                    </button>
+
                     <button id="btn-add-profile" class="btn-add-profile" type="button">
                         <i class="fa-solid fa-user-plus"></i> 새 프로필 추가
                     </button>
@@ -530,6 +524,18 @@
                     <div class="form-input-wrapper">
                         <i class="fa-solid fa-user"></i>
                         <input type="text" id="new-profile-name" placeholder="이름을 입력하세요 (예: 엄마, 나, 동생)" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>프로필 사진 업로드 (선택)</label>
+                    <div style="display: flex; align-items: center; gap: 15px; margin-top: 8px;">
+                        <div id="profile-image-preview" style="width: 50px; height: 50px; border-radius: 50%; background: rgba(255, 255, 255, 0.05); border: 1px dashed rgba(255, 255, 255, 0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--text-muted); font-size: 18px;">
+                            <i class="fa-solid fa-camera"></i>
+                        </div>
+                        <label for="new-profile-image" class="btn-secondary" style="padding: 8px 14px; font-size: 12px; cursor: pointer; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 6px; margin: 0;">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> 사진 선택
+                        </label>
+                        <input type="file" id="new-profile-image" accept="image/*" style="display: none;">
                     </div>
                 </div>
                 <div class="form-group color-preset-group">
