@@ -199,7 +199,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveToCloud() {
         if (!currentRoomId) return;
-        const url = `https://kvdb.io/Sf98ZTAnze7jR199cZxpRm/${currentRoomId}`;
         
         // Deep copy state and strip heavy Base64 image payload to prevent HTTP 413 (Payload Too Large)
         const cleanState = JSON.parse(JSON.stringify(state));
@@ -213,16 +212,44 @@ document.addEventListener('DOMContentLoaded', () => {
             state: cleanState,
             timestamp: Date.now()
         };
-        const bodyStr = JSON.stringify(payload);
+        
+        const payloadWrapper = {
+            name: `PillFlow_Room_${currentRoomId}`,
+            data: payload
+        };
+        const bodyStr = JSON.stringify(payloadWrapper);
         if (bodyStr === lastSyncedDataString) return;
         
         lastSyncedDataString = bodyStr;
         try {
+            let url = "";
+            let method = "";
+            const isServerGeneratedId = currentRoomId.length >= 24;
+            
+            if (isServerGeneratedId) {
+                url = `https://api.restful-api.dev/objects/${currentRoomId}`;
+                method = 'PUT';
+            } else {
+                url = `https://api.restful-api.dev/objects`;
+                method = 'POST';
+            }
+            
             const response = await fetch(url, {
-                method: 'POST',
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: bodyStr
             });
-            if (!response.ok) {
+            
+            if (response.ok) {
+                const resData = await response.json();
+                if (!isServerGeneratedId && resData && resData.id) {
+                    currentRoomId = resData.id;
+                    const newUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
+                    window.history.pushState({ path: newUrl }, '', newUrl);
+                }
+            } else {
                 console.error('Cloud save failed:', response.statusText);
             }
         } catch (e) {
@@ -232,47 +259,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadFromCloud() {
         if (!currentRoomId || isSyncing) return;
+        const isServerGeneratedId = currentRoomId.length >= 24;
+        if (!isServerGeneratedId) return;
+        
         isSyncing = true;
-        const url = `https://kvdb.io/Sf98ZTAnze7jR199cZxpRm/${currentRoomId}`;
+        const url = `https://api.restful-api.dev/objects/${currentRoomId}?t=${Date.now()}`;
         try {
-            const response = await fetch(url);
+            const response = await fetch(url, { cache: "no-store" });
             if (response.status === 404) {
                 isSyncing = false;
                 await saveToCloud();
                 return;
             }
             if (response.ok) {
-                const text = await response.text();
-                let data;
-                try {
-                    data = JSON.parse(text);
-                } catch (e) {
-                    console.error("Fetched data is not JSON:", text);
-                    return;
-                }
-                
+                const resData = await response.json();
                 let fetchedState = null;
-                if (data && data.state) {
-                    fetchedState = data.state;
-                } else if (data && typeof data.value === 'string') {
-                    try {
-                        const parsedVal = JSON.parse(data.value);
-                        if (parsedVal && parsedVal.state) {
-                            fetchedState = parsedVal.state;
-                        } else {
-                            fetchedState = parsedVal;
-                        }
-                    } catch(e) {
-                        // ignore
-                    }
-                } else if (data && typeof data.value === 'object') {
-                    if (data.value && data.value.state) {
-                        fetchedState = data.value.state;
-                    } else {
-                        fetchedState = data.value;
-                    }
-                } else {
-                    fetchedState = data;
+                if (resData && resData.data && resData.data.state) {
+                    fetchedState = resData.data.state;
                 }
                 
                 if (fetchedState && Array.isArray(fetchedState.profiles) && fetchedState.activeProfileId) {
@@ -322,7 +325,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         }
                     }
-                    lastSyncedDataString = JSON.stringify(data);
+                    
+                    const payloadWrapper = {
+                        name: `PillFlow_Room_${currentRoomId}`,
+                        data: {
+                            state: fetchedState,
+                            timestamp: (resData.data && resData.data.timestamp) || Date.now()
+                        }
+                    };
+                    lastSyncedDataString = JSON.stringify(payloadWrapper);
                 }
             }
         } catch (e) {
@@ -1569,42 +1580,75 @@ document.addEventListener('DOMContentLoaded', () => {
     // Share Link Copy Button
     const btnCopyShareLink = document.getElementById('btn-copy-share-link');
     if (btnCopyShareLink) {
-        btnCopyShareLink.addEventListener('click', (e) => {
+        btnCopyShareLink.addEventListener('click', async (e) => {
             e.stopPropagation();
-            let roomId = currentRoomId;
-            if (!roomId) {
-                // Generate a unique room ID
-                roomId = `flow-${Math.random().toString(36).substring(2, 9)}`;
-                currentRoomId = roomId;
-                
-                // Update browser URL without reloading
-                const newUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-                window.history.pushState({ path: newUrl }, '', newUrl);
-                
-                // Show Live Sync Banner
-                const syncBanner = document.getElementById('sync-status-banner');
-                if (syncBanner) {
-                    syncBanner.classList.remove('hidden');
-                }
-                
-                // Initial save to cloud
-                saveState();
-                
-                // Start cloud polling
-                setInterval(loadFromCloud, 5000);
-            }
             
-            const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-            navigator.clipboard.writeText(shareLink).then(() => {
-                showToast("실시간 공유 링크가 클립보드에 복사되었습니다.", "success");
-            }).catch(err => {
-                console.error("Failed to copy link:", err);
-                showToast("링크 복사에 실패했습니다.", "error");
-            });
-            
-            // Close profile dropdown
             if (profileDropdown) {
                 profileDropdown.classList.remove('active');
+            }
+            
+            let roomId = currentRoomId;
+            const isServerGeneratedId = roomId && roomId.length >= 24;
+            
+            if (!roomId || !isServerGeneratedId) {
+                showToast("실시간 공유 공간을 생성하는 중...", "info");
+                
+                const cleanState = JSON.parse(JSON.stringify(state));
+                if (cleanState.profiles && Array.isArray(cleanState.profiles)) {
+                    cleanState.profiles.forEach(p => {
+                        delete p.avatarImage;
+                    });
+                }
+                const payload = {
+                    state: cleanState,
+                    timestamp: Date.now()
+                };
+                const payloadWrapper = {
+                    name: `PillFlow_Room_new`,
+                    data: payload
+                };
+                
+                try {
+                    const response = await fetch("https://api.restful-api.dev/objects", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payloadWrapper)
+                    });
+                    
+                    if (response.ok) {
+                        const resData = await response.json();
+                        if (resData && resData.id) {
+                            roomId = resData.id;
+                            currentRoomId = roomId;
+                            
+                            const newUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+                            window.history.pushState({ path: newUrl }, '', newUrl);
+                            
+                            const syncBanner = document.getElementById('sync-status-banner');
+                            if (syncBanner) {
+                                syncBanner.classList.remove('hidden');
+                            }
+                            
+                            setInterval(loadFromCloud, 5000);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Failed to create cloud room:", err);
+                    showToast("공유 공간 생성에 실패했습니다.", "error");
+                    return;
+                }
+            }
+            
+            if (roomId) {
+                const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+                navigator.clipboard.writeText(shareLink).then(() => {
+                    showToast("실시간 공유 링크가 클립보드에 복사되었습니다.", "success");
+                }).catch(err => {
+                    console.error("Failed to copy link:", err);
+                    showToast("링크 복사에 실패했습니다.", "error");
+                });
             }
         });
     }
