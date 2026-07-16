@@ -197,10 +197,12 @@ document.addEventListener('DOMContentLoaded', () => {
         saveToCloud();
     }
 
+    const FIREBASE_DB_URL = 'https://pill-reminder-ai-43ffa-default-rtdb.asia-southeast1.firebasedatabase.app';
+
     async function saveToCloud() {
         if (!currentRoomId) return;
         
-        // Deep copy state and strip heavy Base64 image payload to prevent HTTP 413 (Payload Too Large)
+        // Deep copy state and strip heavy Base64 image payload
         const cleanState = JSON.parse(JSON.stringify(state));
         if (cleanState.profiles && Array.isArray(cleanState.profiles)) {
             cleanState.profiles.forEach(p => {
@@ -208,139 +210,111 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        // Pack stringified state directly into the 'name' field to bypass deep schema validations
-        const bodyObj = {
-            name: JSON.stringify(cleanState),
-            data: {
-                timestamp: Date.now()
-            }
+        const payload = {
+            stateData: JSON.stringify(cleanState),
+            timestamp: Date.now()
         };
-        const bodyStr = JSON.stringify(bodyObj);
+        const bodyStr = JSON.stringify(payload);
         if (bodyStr === lastSyncedDataString) return;
         
         lastSyncedDataString = bodyStr;
         try {
-            let url = "";
-            let method = "";
-            const isServerGeneratedId = currentRoomId.length >= 24;
-            
-            if (isServerGeneratedId) {
-                url = `https://api.restful-api.dev/objects/${currentRoomId}`;
-                method = 'PUT';
-            } else {
-                url = `https://api.restful-api.dev/objects`;
-                method = 'POST';
-            }
-            
+            // Firebase REST API: PUT /rooms/{roomId}.json
+            const url = `${FIREBASE_DB_URL}/rooms/${encodeURIComponent(currentRoomId)}.json`;
             const response = await fetch(url, {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
                 body: bodyStr
             });
-            
-            if (response.ok) {
-                const resData = await response.json();
-                if (!isServerGeneratedId && resData && resData.id) {
-                    currentRoomId = resData.id;
-                    const newUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
-                    window.history.pushState({ path: newUrl }, '', newUrl);
-                }
-            } else {
-                console.error('Cloud save failed:', response.statusText);
+            if (!response.ok) {
+                console.error('Firebase save failed:', response.status, await response.text());
             }
         } catch (e) {
-            console.error('Cloud save error:', e);
+            console.error('Firebase save error:', e);
         }
     }
 
     async function loadFromCloud() {
         if (!currentRoomId || isSyncing) return;
-        const isServerGeneratedId = currentRoomId.length >= 24;
-        if (!isServerGeneratedId) return;
-        
         isSyncing = true;
-        const url = `https://api.restful-api.dev/objects/${currentRoomId}?t=${Date.now()}`;
         try {
-            const response = await fetch(url, { cache: "no-store" });
-            if (response.status === 404) {
+            // Firebase REST API: GET /rooms/{roomId}.json
+            const url = `${FIREBASE_DB_URL}/rooms/${encodeURIComponent(currentRoomId)}.json?t=${Date.now()}`;
+            const response = await fetch(url, { cache: 'no-store' });
+            
+            if (!response.ok) {
+                console.error('Firebase load failed:', response.status);
+                return;
+            }
+            
+            const resData = await response.json();
+            
+            // Firebase returns null if path doesn't exist yet — save current state
+            if (resData === null) {
                 isSyncing = false;
                 await saveToCloud();
                 return;
             }
-            if (response.ok) {
-                const resData = await response.json();
-                let fetchedState = null;
-                // Retrieve parsed state directly from the 'name' field
-                if (resData && resData.name) {
-                    try {
-                        fetchedState = JSON.parse(resData.name);
-                    } catch(e) {
-                        console.error("Failed to parse state from name field:", e);
-                    }
+            
+            let fetchedState = null;
+            if (resData && resData.stateData) {
+                try {
+                    fetchedState = JSON.parse(resData.stateData);
+                } catch(e) {
+                    console.error('Failed to parse Firebase stateData:', e);
                 }
+            }
+            
+            if (fetchedState && Array.isArray(fetchedState.profiles) && fetchedState.activeProfileId) {
+                // Merge local avatar images (preserve per-device photos)
+                fetchedState.profiles.forEach(fetchedProfile => {
+                    const localProfile = state.profiles.find(lp => lp.id === fetchedProfile.id);
+                    if (localProfile && localProfile.avatarImage) {
+                        fetchedProfile.avatarImage = localProfile.avatarImage;
+                    }
+                });
                 
-                if (fetchedState && Array.isArray(fetchedState.profiles) && fetchedState.activeProfileId) {
-                    // Merge local avatar images back into the fetched state (to preserve local photos)
-                    fetchedState.profiles.forEach(fetchedProfile => {
-                        const localProfile = state.profiles.find(lp => lp.id === fetchedProfile.id);
-                        if (localProfile && localProfile.avatarImage) {
-                            fetchedProfile.avatarImage = localProfile.avatarImage;
-                        }
-                    });
+                const stateStr = JSON.stringify(fetchedState);
+                const localStateStr = JSON.stringify(state);
+                
+                if (stateStr !== localStateStr) {
+                    state = fetchedState;
                     
-                    const stateStr = JSON.stringify(fetchedState);
-                    const localStateStr = JSON.stringify(state);
+                    localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(state.profiles));
+                    localStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, state.activeProfileId);
+                    localStorage.setItem(STORAGE_KEYS.PILLS, JSON.stringify(state.pills));
+                    localStorage.setItem(STORAGE_KEYS.INTAKE_RECORDS, JSON.stringify(state.intakeRecords));
+                    localStorage.setItem(STORAGE_KEYS.CHAT_LOGS, JSON.stringify(state.chatLogs));
+                    localStorage.setItem(STORAGE_KEYS.NOTIFIED_DOSES, JSON.stringify(state.notifiedDoses));
                     
-                    if (stateStr !== localStateStr) {
-                        state = fetchedState;
+                    initTodaySchedule();
+                    renderDashboard();
+                    renderCabinet();
+                    renderChat();
+                    renderProfileList();
+                    
+                    const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
+                    if (activeProfile) {
+                        const activeProfileNameEl = document.getElementById('profile-current-name');
+                        if (activeProfileNameEl) activeProfileNameEl.textContent = `${activeProfile.name} 님`;
                         
-                        // Save locally
-                        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(state.profiles));
-                        localStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, state.activeProfileId);
-                        localStorage.setItem(STORAGE_KEYS.PILLS, JSON.stringify(state.pills));
-                        localStorage.setItem(STORAGE_KEYS.INTAKE_RECORDS, JSON.stringify(state.intakeRecords));
-                        localStorage.setItem(STORAGE_KEYS.CHAT_LOGS, JSON.stringify(state.chatLogs));
-                        localStorage.setItem(STORAGE_KEYS.NOTIFIED_DOSES, JSON.stringify(state.notifiedDoses));
-                        
-                        initTodaySchedule();
-                        renderDashboard();
-                        renderCabinet();
-                        renderChat();
-                        renderProfileList();
-                        
-                        const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
-                        if (activeProfile) {
-                            const activeProfileNameEl = document.getElementById('profile-current-name');
-                            if (activeProfileNameEl) activeProfileNameEl.textContent = `${activeProfile.name} 님`;
-                            
-                            const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
-                            if (activeProfileAvatarEl) {
-                                if (activeProfile.avatarImage) {
-                                    activeProfileAvatarEl.innerHTML = `<img class="profile-avatar-img" src="${activeProfile.avatarImage}">`;
-                                    activeProfileAvatarEl.style.backgroundColor = 'transparent';
-                                } else {
-                                    activeProfileAvatarEl.innerHTML = `<i class="fa-solid fa-user-circle"></i>`;
-                                    activeProfileAvatarEl.style.color = activeProfile.avatarColor;
-                                    activeProfileAvatarEl.style.backgroundColor = '';
-                                }
+                        const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
+                        if (activeProfileAvatarEl) {
+                            if (activeProfile.avatarImage) {
+                                activeProfileAvatarEl.innerHTML = `<img class="profile-avatar-img" src="${activeProfile.avatarImage}">`;
+                                activeProfileAvatarEl.style.backgroundColor = 'transparent';
+                            } else {
+                                activeProfileAvatarEl.innerHTML = `<i class="fa-solid fa-user-circle"></i>`;
+                                activeProfileAvatarEl.style.color = activeProfile.avatarColor;
+                                activeProfileAvatarEl.style.backgroundColor = '';
                             }
                         }
                     }
-                    
-                    const payloadWrapper = {
-                        name: `PillFlow_Room_${currentRoomId}`,
-                        data: {
-                            state: fetchedState,
-                            timestamp: (resData.data && resData.data.timestamp) || Date.now()
-                        }
-                    };
-                    lastSyncedDataString = JSON.stringify(payloadWrapper);
                 }
+                lastSyncedDataString = JSON.stringify({ stateData: JSON.stringify(fetchedState), timestamp: resData.timestamp || Date.now() });
             }
         } catch (e) {
-            console.error('Cloud load error:', e);
+            console.error('Firebase load error:', e);
         } finally {
             isSyncing = false;
         }
@@ -1585,78 +1559,40 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnCopyShareLink) {
         btnCopyShareLink.addEventListener('click', async (e) => {
             e.stopPropagation();
+            if (profileDropdown) profileDropdown.classList.remove('active');
             
-            if (profileDropdown) {
-                profileDropdown.classList.remove('active');
-            }
-            
+            // If no room yet, prompt for a room name
             let roomId = currentRoomId;
-            const isServerGeneratedId = roomId && roomId.length >= 24;
-            
-            if (!roomId || !isServerGeneratedId) {
-                showToast("실시간 공유 공간을 생성하는 중...", "info");
+            if (!roomId) {
+                roomId = prompt('공유할 방 번호를 입력하세요 (예: 1, 2, family)', '1');
+                if (!roomId) return;
+                roomId = roomId.trim();
+                currentRoomId = roomId;
                 
-                const cleanState = JSON.parse(JSON.stringify(state));
-                if (cleanState.profiles && Array.isArray(cleanState.profiles)) {
-                    cleanState.profiles.forEach(p => {
-                        delete p.avatarImage;
-                    });
-                }
-                const payloadWrapper = {
-                    name: JSON.stringify(cleanState),
-                    data: {
-                        timestamp: Date.now()
-                    }
-                };
-                
-                try {
-                    const response = await fetch("https://api.restful-api.dev/objects", {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(payloadWrapper)
-                    });
-                    
-                    if (response.ok) {
-                        const resData = await response.json();
-                        if (resData && resData.id) {
-                            roomId = resData.id;
-                            currentRoomId = roomId;
-                            
-                            const newUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-                            window.history.pushState({ path: newUrl }, '', newUrl);
-                            
-                            const syncBanner = document.getElementById('sync-status-banner');
-                            if (syncBanner) {
-                                syncBanner.classList.remove('hidden');
-                            }
-                            
-                            setInterval(loadFromCloud, 5000);
-                        } else {
-                            showToast("공유 공간 생성 응답 분석에 실패했습니다.", "error");
-                            return;
-                        }
-                    } else {
-                        showToast("공유 공간 생성 요청이 서버에서 거부되었습니다.", "error");
-                        return;
-                    }
-                } catch (err) {
-                    console.error("Failed to create cloud room:", err);
-                    showToast("공유 공간 생성 네트워크 오류가 발생했습니다.", "error");
-                    return;
-                }
+                const newUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+                window.history.pushState({ path: newUrl }, '', newUrl);
             }
             
-            if (roomId) {
-                const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-                navigator.clipboard.writeText(shareLink).then(() => {
-                    showToast("실시간 공유 링크가 클립보드에 복사되었습니다.", "success");
-                }).catch(err => {
-                    console.error("Failed to copy link:", err);
-                    showToast("링크 복사에 실패했습니다.", "error");
-                });
+            // Save current state to Firebase first
+            await saveToCloud();
+            
+            // Show banner & start polling if not already running
+            const syncBanner = document.getElementById('sync-status-banner');
+            if (syncBanner) syncBanner.classList.remove('hidden');
+            
+            // Start polling (safe to call multiple times — interval checks internally)
+            if (!window._syncIntervalStarted) {
+                window._syncIntervalStarted = true;
+                setInterval(loadFromCloud, 5000);
             }
+            
+            // Copy share link to clipboard
+            const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+            navigator.clipboard.writeText(shareLink).then(() => {
+                showToast(`공유 링크가 복사되었습니다! (방 번호: ${roomId})`, 'success');
+            }).catch(() => {
+                showToast(`공유 링크: ${shareLink}`, 'info');
+            });
         });
     }
 
