@@ -100,9 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let tempAnalyzedPills = [];
     let activePillAlarm = null;
     let snoozeTimers = {};
-    let currentRoomId = null;
-    let lastSyncedDataString = "";
-    let isSyncing = false;
+
 
     function getInitialChatMessages(profileName) {
         return [
@@ -193,121 +191,6 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem(STORAGE_KEYS.CHAT_LOGS, JSON.stringify(state.chatLogs));
         localStorage.setItem(STORAGE_KEYS.NOTIFIED_DOSES, JSON.stringify(state.notifiedDoses));
         
-        saveToCloud();
-    }
-
-    async function saveToCloud() {
-        if (!currentRoomId) return;
-        const url = `https://keyvalue.imanyou.co/api/keyval/${currentRoomId}`;
-        const payload = {
-            state: state,
-            timestamp: Date.now()
-        };
-        const bodyStr = JSON.stringify(payload);
-        if (bodyStr === lastSyncedDataString) return;
-        
-        lastSyncedDataString = bodyStr;
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: bodyStr
-            });
-            if (!response.ok) {
-                console.error('Cloud save failed:', response.statusText);
-            }
-        } catch (e) {
-            console.error('Cloud save error:', e);
-        }
-    }
-
-    async function loadFromCloud() {
-        if (!currentRoomId || isSyncing) return;
-        isSyncing = true;
-        const url = `https://keyvalue.imanyou.co/api/keyval/${currentRoomId}`;
-        try {
-            const response = await fetch(url);
-            if (response.status === 404) {
-                isSyncing = false;
-                await saveToCloud();
-                return;
-            }
-            if (response.ok) {
-                const text = await response.text();
-                let data;
-                try {
-                    data = JSON.parse(text);
-                } catch (e) {
-                    console.error("Fetched data is not JSON:", text);
-                    return;
-                }
-                
-                let fetchedState = null;
-                if (data && data.state) {
-                    fetchedState = data.state;
-                } else if (data && typeof data.value === 'string') {
-                    try {
-                        const parsedVal = JSON.parse(data.value);
-                        if (parsedVal && parsedVal.state) {
-                            fetchedState = parsedVal.state;
-                        } else {
-                            fetchedState = parsedVal;
-                        }
-                    } catch(e) {
-                        // ignore
-                    }
-                } else if (data && typeof data.value === 'object') {
-                    if (data.value && data.value.state) {
-                        fetchedState = data.value.state;
-                    } else {
-                        fetchedState = data.value;
-                    }
-                } else {
-                    fetchedState = data;
-                }
-                
-                if (fetchedState && Array.isArray(fetchedState.profiles) && fetchedState.activeProfileId) {
-                    const stateStr = JSON.stringify(fetchedState);
-                    const localStateStr = JSON.stringify(state);
-                    
-                    if (stateStr !== localStateStr) {
-                        state = fetchedState;
-                        
-                        // Save locally
-                        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(state.profiles));
-                        localStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, state.activeProfileId);
-                        localStorage.setItem(STORAGE_KEYS.PILLS, JSON.stringify(state.pills));
-                        localStorage.setItem(STORAGE_KEYS.INTAKE_RECORDS, JSON.stringify(state.intakeRecords));
-                        localStorage.setItem(STORAGE_KEYS.CHAT_LOGS, JSON.stringify(state.chatLogs));
-                        localStorage.setItem(STORAGE_KEYS.NOTIFIED_DOSES, JSON.stringify(state.notifiedDoses));
-                        
-                        initTodaySchedule();
-                        renderDashboard();
-                        renderCabinet();
-                        renderChat();
-                        renderProfileList();
-                        
-                        const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
-                        if (activeProfile) {
-                            const activeProfileNameEl = document.getElementById('profile-current-name');
-                            if (activeProfileNameEl) activeProfileNameEl.textContent = `${activeProfile.name} 님`;
-                            
-                            const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
-                            if (activeProfileAvatarEl) activeProfileAvatarEl.style.color = activeProfile.avatarColor;
-                        }
-                        
-                        showToast("클라우드 데이터와 동기화되었습니다.", "info");
-                    }
-                    lastSyncedDataString = JSON.stringify(data);
-                }
-            }
-        } catch (e) {
-            console.error('Cloud load error:', e);
-        } finally {
-            isSyncing = false;
-        }
     }
 
     // ==========================================
@@ -1399,12 +1282,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // 12. Multi-Profile Management Logic & Bindings
     // ==========================================
-    function createProfile(name, color) {
+    function createProfile(name, color, avatarImage) {
         const newId = `prof-${Date.now()}`;
         const newProfile = {
             id: newId,
             name: name,
-            avatarColor: color
+            avatarColor: color,
+            avatarImage: avatarImage || null
         };
         
         state.profiles.push(newProfile);
@@ -1433,7 +1317,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
         if (activeProfileAvatarEl) {
-            activeProfileAvatarEl.style.color = activeProfile.avatarColor;
+            if (activeProfile.avatarImage) {
+                activeProfileAvatarEl.innerHTML = `<img class="profile-avatar-img" src="${activeProfile.avatarImage}">`;
+                activeProfileAvatarEl.style.backgroundColor = 'transparent';
+            } else {
+                activeProfileAvatarEl.innerHTML = `<i class="fa-solid fa-user-circle"></i>`;
+                activeProfileAvatarEl.style.color = activeProfile.avatarColor;
+                activeProfileAvatarEl.style.backgroundColor = '';
+            }
         }
         
         initTodaySchedule();
@@ -1480,11 +1371,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         profileListEl.innerHTML = state.profiles.map(p => {
             const isActive = p.id === state.activeProfileId;
+            const avatarContent = p.avatarImage 
+                ? `<img class="profile-item-avatar-img" src="${p.avatarImage}">` 
+                : `<i class="fa-solid fa-user"></i>`;
+            const avatarBg = p.avatarImage ? 'background: transparent;' : `background-color: ${p.avatarColor};`;
             return `
                 <div class="profile-item ${isActive ? 'active' : ''}" data-id="${p.id}">
                     <div class="profile-item-click-zone" style="display: flex; align-items: center; gap: 10px; flex-grow: 1; height: 100%;">
-                        <div class="profile-item-avatar" style="background-color: ${p.avatarColor};">
-                            <i class="fa-solid fa-user"></i>
+                        <div class="profile-item-avatar" style="${avatarBg}">
+                            ${avatarContent}
                         </div>
                         <span class="profile-item-name">${p.name}</span>
                     </div>
@@ -1582,13 +1477,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCreateProfile = document.getElementById('btn-create-profile');
     const newProfileNameInput = document.getElementById('new-profile-name');
     const colorPresets = document.querySelectorAll('.color-preset-btn');
+    const newProfileImageInput = document.getElementById('new-profile-image');
+    const profileImagePreview = document.getElementById('profile-image-preview');
     
     let selectedColor = "#6366f1";
+    let uploadedProfileImageBase64 = null;
     
     if (btnAddProfile && profileModal) {
         btnAddProfile.addEventListener('click', (e) => {
             e.stopPropagation();
             if (newProfileNameInput) newProfileNameInput.value = "";
+            if (newProfileImageInput) newProfileImageInput.value = "";
+            if (profileImagePreview) {
+                profileImagePreview.innerHTML = `<i class="fa-solid fa-camera"></i>`;
+            }
+            uploadedProfileImageBase64 = null;
+            
             colorPresets.forEach(preset => {
                 preset.classList.remove('active');
                 if (preset.getAttribute('data-color') === "#6366f1") {
@@ -1598,6 +1502,26 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedColor = "#6366f1";
             profileModal.classList.remove('hidden');
             if (profileDropdown) profileDropdown.classList.remove('active');
+        });
+    }
+    
+    // File upload reader
+    if (newProfileImageInput && profileImagePreview) {
+        newProfileImageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                if (file.size > 2 * 1024 * 1024) {
+                    showToast("이미지 크기는 최대 2MB까지 지원됩니다.", "warning");
+                    newProfileImageInput.value = "";
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    uploadedProfileImageBase64 = event.target.result;
+                    profileImagePreview.innerHTML = `<img src="${uploadedProfileImageBase64}" style="width: 100%; height: 100%; object-fit: cover;">`;
+                };
+                reader.readAsDataURL(file);
+            }
         });
     }
     
@@ -1622,7 +1546,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast("프로필 이름을 입력해 주세요.", "warning");
                 return;
             }
-            createProfile(name, selectedColor);
+            createProfile(name, selectedColor, uploadedProfileImageBase64);
             profileModal.classList.add('hidden');
         });
     }
@@ -1633,39 +1557,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadState();
     initTodaySchedule();
     
-    // URL parameter check for Room Sync
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlRoomId = urlParams.get('room');
-    if (urlRoomId) {
-        currentRoomId = urlRoomId;
-        const syncBanner = document.getElementById('sync-status-banner');
-        if (syncBanner) {
-            syncBanner.classList.remove('hidden');
-        }
-        
-        // Initial cloud load (asynchronous)
-        loadFromCloud().then(() => {
-            // Set active profile header details after sync
-            const initialActiveProfile = state.profiles.find(p => p.id === state.activeProfileId);
-            if (initialActiveProfile) {
-                const activeProfileNameEl = document.getElementById('profile-current-name');
-                if (activeProfileNameEl) activeProfileNameEl.textContent = `${initialActiveProfile.name} 님`;
-                
-                const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
-                if (activeProfileAvatarEl) activeProfileAvatarEl.style.color = initialActiveProfile.avatarColor;
-            }
-            
-            renderDashboard();
-            renderCabinet();
-            renderChat();
-            renderProfileList();
-        });
-        
-        // Start cloud polling
-        setInterval(loadFromCloud, 5000);
-    } else {
-        saveState();
-    }
+    saveState();
     
     // Set initially active profile header details
     const initialActiveProfile = state.profiles.find(p => p.id === state.activeProfileId);
@@ -1674,7 +1566,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activeProfileNameEl) activeProfileNameEl.textContent = `${initialActiveProfile.name} 님`;
         
         const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
-        if (activeProfileAvatarEl) activeProfileAvatarEl.style.color = initialActiveProfile.avatarColor;
+        if (activeProfileAvatarEl) {
+            if (initialActiveProfile.avatarImage) {
+                activeProfileAvatarEl.innerHTML = `<img class="profile-avatar-img" src="${initialActiveProfile.avatarImage}">`;
+                activeProfileAvatarEl.style.backgroundColor = 'transparent';
+            } else {
+                activeProfileAvatarEl.innerHTML = `<i class="fa-solid fa-user-circle"></i>`;
+                activeProfileAvatarEl.style.color = initialActiveProfile.avatarColor;
+                activeProfileAvatarEl.style.backgroundColor = '';
+            }
+        }
     }
     
     // First render
