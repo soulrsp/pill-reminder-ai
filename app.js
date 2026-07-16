@@ -100,6 +100,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let tempAnalyzedPills = [];
     let activePillAlarm = null;
     let snoozeTimers = {};
+    let currentRoomId = null;
+    let lastSyncedDataString = "";
+    let isSyncing = false;
 
     function getInitialChatMessages(profileName) {
         return [
@@ -189,6 +192,122 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem(STORAGE_KEYS.INTAKE_RECORDS, JSON.stringify(state.intakeRecords));
         localStorage.setItem(STORAGE_KEYS.CHAT_LOGS, JSON.stringify(state.chatLogs));
         localStorage.setItem(STORAGE_KEYS.NOTIFIED_DOSES, JSON.stringify(state.notifiedDoses));
+        
+        saveToCloud();
+    }
+
+    async function saveToCloud() {
+        if (!currentRoomId) return;
+        const url = `https://keyvalue.imanyou.co/api/keyval/${currentRoomId}`;
+        const payload = {
+            state: state,
+            timestamp: Date.now()
+        };
+        const bodyStr = JSON.stringify(payload);
+        if (bodyStr === lastSyncedDataString) return;
+        
+        lastSyncedDataString = bodyStr;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: bodyStr
+            });
+            if (!response.ok) {
+                console.error('Cloud save failed:', response.statusText);
+            }
+        } catch (e) {
+            console.error('Cloud save error:', e);
+        }
+    }
+
+    async function loadFromCloud() {
+        if (!currentRoomId || isSyncing) return;
+        isSyncing = true;
+        const url = `https://keyvalue.imanyou.co/api/keyval/${currentRoomId}`;
+        try {
+            const response = await fetch(url);
+            if (response.status === 404) {
+                isSyncing = false;
+                await saveToCloud();
+                return;
+            }
+            if (response.ok) {
+                const text = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    console.error("Fetched data is not JSON:", text);
+                    return;
+                }
+                
+                let fetchedState = null;
+                if (data && data.state) {
+                    fetchedState = data.state;
+                } else if (data && typeof data.value === 'string') {
+                    try {
+                        const parsedVal = JSON.parse(data.value);
+                        if (parsedVal && parsedVal.state) {
+                            fetchedState = parsedVal.state;
+                        } else {
+                            fetchedState = parsedVal;
+                        }
+                    } catch(e) {
+                        // ignore
+                    }
+                } else if (data && typeof data.value === 'object') {
+                    if (data.value && data.value.state) {
+                        fetchedState = data.value.state;
+                    } else {
+                        fetchedState = data.value;
+                    }
+                } else {
+                    fetchedState = data;
+                }
+                
+                if (fetchedState && Array.isArray(fetchedState.profiles) && fetchedState.activeProfileId) {
+                    const stateStr = JSON.stringify(fetchedState);
+                    const localStateStr = JSON.stringify(state);
+                    
+                    if (stateStr !== localStateStr) {
+                        state = fetchedState;
+                        
+                        // Save locally
+                        localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(state.profiles));
+                        localStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, state.activeProfileId);
+                        localStorage.setItem(STORAGE_KEYS.PILLS, JSON.stringify(state.pills));
+                        localStorage.setItem(STORAGE_KEYS.INTAKE_RECORDS, JSON.stringify(state.intakeRecords));
+                        localStorage.setItem(STORAGE_KEYS.CHAT_LOGS, JSON.stringify(state.chatLogs));
+                        localStorage.setItem(STORAGE_KEYS.NOTIFIED_DOSES, JSON.stringify(state.notifiedDoses));
+                        
+                        initTodaySchedule();
+                        renderDashboard();
+                        renderCabinet();
+                        renderChat();
+                        renderProfileList();
+                        
+                        const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
+                        if (activeProfile) {
+                            const activeProfileNameEl = document.getElementById('profile-current-name');
+                            if (activeProfileNameEl) activeProfileNameEl.textContent = `${activeProfile.name} 님`;
+                            
+                            const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
+                            if (activeProfileAvatarEl) activeProfileAvatarEl.style.color = activeProfile.avatarColor;
+                        }
+                        
+                        showToast("클라우드 데이터와 동기화되었습니다.", "info");
+                    }
+                    lastSyncedDataString = JSON.stringify(data);
+                }
+            }
+        } catch (e) {
+            console.error('Cloud load error:', e);
+        } finally {
+            isSyncing = false;
+        }
     }
 
     // ==========================================
@@ -326,6 +445,8 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.classList.add('show');
         
         setTimeout(() => {
+            toast.style.animation = 'none';
+            toast.offsetHeight; // trigger reflow
             toast.style.opacity = '0';
             toast.style.transform = 'translateX(100%)';
             toast.style.transition = 'all 0.5s ease-in-out';
@@ -1411,6 +1532,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Share Link Copy Button
+    const btnCopyShareLink = document.getElementById('btn-copy-share-link');
+    if (btnCopyShareLink) {
+        btnCopyShareLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            let roomId = currentRoomId;
+            if (!roomId) {
+                // Generate a unique room ID
+                roomId = `flow-${Math.random().toString(36).substring(2, 9)}`;
+                currentRoomId = roomId;
+                
+                // Update browser URL without reloading
+                const newUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+                window.history.pushState({ path: newUrl }, '', newUrl);
+                
+                // Show Live Sync Banner
+                const syncBanner = document.getElementById('sync-status-banner');
+                if (syncBanner) {
+                    syncBanner.classList.remove('hidden');
+                }
+                
+                // Initial save to cloud
+                saveState();
+                
+                // Start cloud polling
+                setInterval(loadFromCloud, 5000);
+            }
+            
+            const shareLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+            navigator.clipboard.writeText(shareLink).then(() => {
+                showToast("실시간 공유 링크가 클립보드에 복사되었습니다.", "success");
+            }).catch(err => {
+                console.error("Failed to copy link:", err);
+                showToast("링크 복사에 실패했습니다.", "error");
+            });
+            
+            // Close profile dropdown
+            if (profileDropdown) {
+                profileDropdown.classList.remove('active');
+            }
+        });
+    }
+
     // Profile Creation Modal Trigger & Controls
     const btnAddProfile = document.getElementById('btn-add-profile');
     const profileModal = document.getElementById('profile-modal');
@@ -1468,7 +1632,40 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     loadState();
     initTodaySchedule();
-    saveState();
+    
+    // URL parameter check for Room Sync
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRoomId = urlParams.get('room');
+    if (urlRoomId) {
+        currentRoomId = urlRoomId;
+        const syncBanner = document.getElementById('sync-status-banner');
+        if (syncBanner) {
+            syncBanner.classList.remove('hidden');
+        }
+        
+        // Initial cloud load (asynchronous)
+        loadFromCloud().then(() => {
+            // Set active profile header details after sync
+            const initialActiveProfile = state.profiles.find(p => p.id === state.activeProfileId);
+            if (initialActiveProfile) {
+                const activeProfileNameEl = document.getElementById('profile-current-name');
+                if (activeProfileNameEl) activeProfileNameEl.textContent = `${initialActiveProfile.name} 님`;
+                
+                const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
+                if (activeProfileAvatarEl) activeProfileAvatarEl.style.color = initialActiveProfile.avatarColor;
+            }
+            
+            renderDashboard();
+            renderCabinet();
+            renderChat();
+            renderProfileList();
+        });
+        
+        // Start cloud polling
+        setInterval(loadFromCloud, 5000);
+    } else {
+        saveState();
+    }
     
     // Set initially active profile header details
     const initialActiveProfile = state.profiles.find(p => p.id === state.activeProfileId);
