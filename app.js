@@ -199,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveToCloud() {
         if (!currentRoomId) return;
-        const url = `https://keyvalue.imanyou.co/api/keyval/${currentRoomId}`;
+        const url = `https://kvdb.io/C8qDuyb1uQZ1J9h7Bq4mR7/${currentRoomId}`;
         const payload = {
             state: state,
             timestamp: Date.now()
@@ -210,10 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lastSyncedDataString = bodyStr;
         try {
             const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                method: 'PUT',
                 body: bodyStr
             });
             if (!response.ok) {
@@ -227,7 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadFromCloud() {
         if (!currentRoomId || isSyncing) return;
         isSyncing = true;
-        const url = `https://keyvalue.imanyou.co/api/keyval/${currentRoomId}`;
+        const url = `https://kvdb.io/C8qDuyb1uQZ1J9h7Bq4mR7/${currentRoomId}`;
         try {
             const response = await fetch(url);
             if (response.status === 404) {
@@ -1753,6 +1750,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlRoomId = urlParams.get('room');
     if (urlRoomId) {
         currentRoomId = urlRoomId;
+        const syncBanner = document.getElementById('sync-status-banner');
+        if (syncBanner) {
+            syncBanner.classList.remove('hidden');
+        }
         
         // Initial cloud load (asynchronous)
         loadFromCloud().then(() => {
