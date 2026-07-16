@@ -1879,3 +1879,12 @@ body.dark-theme {
         transform: translateY(0);
     }
 }
+
+/* Custom Profile Image Avatar Styles */
+.profile-avatar-img, .profile-item-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    display: block;
+}
