@@ -338,7 +338,7 @@
                                     <label for="pill-expiry-input">유통기한</label>
                                     <div class="form-input-wrapper">
                                         <i class="fa-solid fa-calendar-xmark"></i>
-                                        <input type="date" id="pill-expiry-input" required>
+                                        <input type="date" id="pill-expiry-input" value="2030-12-31" required>
                                     </div>
                                 </div>
                             </div>
@@ -581,6 +581,75 @@
             <div class="profile-modal-footer">
                 <button id="btn-save-profile-photo" class="btn-primary" type="button"><i class="fa-solid fa-check"></i> 저장 완료</button>
                 <button id="btn-cancel-profile-photo" class="btn-secondary" type="button">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pill Edit Modal -->
+    <div id="edit-pill-modal" class="profile-modal hidden">
+        <div class="profile-modal-card glass-card" style="max-width: 480px;">
+            <div class="profile-modal-glow"></div>
+            <div class="profile-modal-header">
+                <i class="fa-solid fa-pen-to-square profile-modal-icon"></i>
+                <h3>약품 정보 수정</h3>
+            </div>
+            <div class="profile-modal-body">
+                <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; text-align: left;">
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label for="edit-pill-name-input">약품 이름</label>
+                        <div class="form-input-wrapper">
+                            <i class="fa-solid fa-pills"></i>
+                            <input type="text" id="edit-pill-name-input" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-pill-dosage-input">1회 복용량</label>
+                        <div class="form-input-wrapper">
+                            <i class="fa-solid fa-syringe"></i>
+                            <input type="text" id="edit-pill-dosage-input" placeholder="예: 1정, 5ml" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-pill-freq-select">복용 빈도</label>
+                        <div class="form-input-wrapper">
+                            <i class="fa-solid fa-clock"></i>
+                            <select id="edit-pill-freq-select">
+                                <option value="morning">아침 식사 후</option>
+                                <option value="afternoon">점심 식사 후</option>
+                                <option value="evening">저녁 식사 후</option>
+                                <option value="bedtime">취침 전</option>
+                                <option value="twice">하루 2회 (아침/저녁)</option>
+                                <option value="thrice">하루 3회 (아침/점심/저녁)</option>
+                                <option value="as-needed">필요 시 복용</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-pill-total-input">전체 수량</label>
+                        <div class="form-input-wrapper">
+                            <i class="fa-solid fa-cubes"></i>
+                            <input type="number" id="edit-pill-total-input" min="1" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-pill-current-input">남은 수량</label>
+                        <div class="form-input-wrapper">
+                            <i class="fa-solid fa-prescription-bottle"></i>
+                            <input type="number" id="edit-pill-current-input" min="0" required>
+                        </div>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label for="edit-pill-expiry-input">유통기한</label>
+                        <div class="form-input-wrapper">
+                            <i class="fa-solid fa-calendar-xmark"></i>
+                            <input type="date" id="edit-pill-expiry-input" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="profile-modal-footer">
+                <button id="btn-save-edit-pill" class="btn-primary" type="button"><i class="fa-solid fa-check"></i> 저장 완료</button>
+                <button id="btn-cancel-edit-pill" class="btn-secondary" type="button">취소</button>
             </div>
         </div>
     </div>
