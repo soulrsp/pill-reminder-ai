@@ -863,6 +863,12 @@ body.dark-theme {
     transition: var(--transition-smooth);
 }
 
+input::placeholder, textarea::placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1;
+}
+
+
 .form-input-wrapper select {
     appearance: none;
     cursor: pointer;
