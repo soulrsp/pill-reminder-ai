@@ -1888,3 +1888,8 @@ body.dark-theme {
     border-radius: 50%;
     display: block;
 }
+
+.btn-edit-profile-photo:hover {
+    color: var(--accent-teal) !important;
+    transform: scale(1.15);
+}
