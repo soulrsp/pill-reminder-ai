@@ -99,6 +99,46 @@ body.dark-theme {
     text-shadow: 0 0 12px rgba(99, 102, 241, 0.6);
 }
 
+/* LIVE Sync Status Banner */
+.sync-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(20, 184, 166, 0.08);
+    border: 1px solid rgba(20, 184, 166, 0.2);
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-teal);
+    box-shadow: 0 0 15px rgba(20, 184, 166, 0.1), inset 0 0 8px rgba(20, 184, 166, 0.05);
+    margin-top: -20px;
+    margin-bottom: 24px;
+    animation: pulseBanner 2s infinite alternate;
+}
+
+.sync-status-banner.hidden {
+    display: none !important;
+}
+
+.sync-status-banner .sync-icon {
+    font-size: 8px;
+    color: var(--accent-teal);
+    text-shadow: 0 0 8px var(--accent-teal);
+    animation: pulsate 1.5s infinite ease-in-out;
+}
+
+@keyframes pulseBanner {
+    0% {
+        border-color: rgba(20, 184, 166, 0.15);
+        box-shadow: 0 0 10px rgba(20, 184, 166, 0.05);
+    }
+    100% {
+        border-color: rgba(20, 184, 166, 0.35);
+        box-shadow: 0 0 20px rgba(20, 184, 166, 0.2);
+    }
+}
+
 .nav-menu {
     display: flex;
     flex-direction: column;
@@ -1246,11 +1286,21 @@ body.dark-theme {
     min-width: 280px;
     max-width: 400px;
     animation: slideIn 0.3s ease-out forwards;
+    transition: opacity 0.3s ease, transform 0.3s ease, height 0.3s ease, padding 0.3s ease, margin 0.3s ease;
 }
 
 @keyframes slideIn {
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
+}
+
+.toast.fade-out {
+    animation: fadeOut 0.3s ease-in forwards !important;
+}
+
+@keyframes fadeOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
 }
 
 .toast.success { border-left: 4px solid var(--accent-teal); }
@@ -1513,6 +1563,12 @@ body.dark-theme {
     }
 }
 
+/* Profile Delete Button Styling */
+.btn-delete-profile:hover {
+    color: var(--accent-rose) !important;
+    transform: scale(1.1);
+}
+
 /* Multi-profile dropdown & modal styles */
 .profile-area {
     position: relative;
@@ -1618,6 +1674,36 @@ body.dark-theme {
     display: block;
 }
 
+.btn-copy-share-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px;
+    background: rgba(20, 184, 166, 0.08);
+    border: 1px solid rgba(20, 184, 166, 0.25);
+    border-radius: 10px;
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    margin-top: 4px;
+    backdrop-filter: blur(5px);
+}
+
+.btn-copy-share-link:hover {
+    background: rgba(20, 184, 166, 0.18);
+    border-color: var(--accent-teal);
+    box-shadow: 0 0 12px rgba(20, 184, 166, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-copy-share-link:active {
+    transform: translateY(0);
+}
+
 .btn-add-profile {
     display: flex;
     align-items: center;
@@ -1633,7 +1719,7 @@ body.dark-theme {
     font-weight: 600;
     cursor: pointer;
     transition: var(--transition-smooth);
-    margin-top: 4px;
+    margin-top: 8px;
 }
 
 .btn-add-profile:hover {
