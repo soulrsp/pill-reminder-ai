@@ -1325,6 +1325,34 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`"${activeProfile.name}" 프로필로 전환되었습니다.`, 'info');
     }
 
+    function deleteProfile(profileId) {
+        if (state.profiles.length <= 1) {
+            showToast("최소 1개 이상의 프로필이 유지되어야 하므로 삭제할 수 없습니다.", "warning");
+            return;
+        }
+        
+        const profile = state.profiles.find(p => p.id === profileId);
+        if (!profile) return;
+        
+        if (confirm(`"${profile.name}" 프로필을 삭제하시겠습니까? 등록된 약물 정보와 복용 일정 내역이 모두 유실됩니다.`)) {
+            state.profiles = state.profiles.filter(p => p.id !== profileId);
+            delete state.pills[profileId];
+            delete state.intakeRecords[profileId];
+            delete state.chatLogs[profileId];
+            delete state.notifiedDoses[profileId];
+            
+            saveState();
+            
+            showToast(`"${profile.name}" 프로필이 삭제되었습니다.`, 'info');
+            
+            if (state.activeProfileId === profileId) {
+                switchProfile(state.profiles[0].id);
+            } else {
+                renderProfileList();
+            }
+        }
+    }
+
     function renderProfileList() {
         const profileListEl = document.getElementById('profile-list');
         if (!profileListEl) return;
@@ -1333,22 +1361,37 @@ document.addEventListener('DOMContentLoaded', () => {
             const isActive = p.id === state.activeProfileId;
             return `
                 <div class="profile-item ${isActive ? 'active' : ''}" data-id="${p.id}">
-                    <div class="profile-item-avatar" style="background-color: ${p.avatarColor};">
-                        <i class="fa-solid fa-user"></i>
+                    <div class="profile-item-click-zone" style="display: flex; align-items: center; gap: 10px; flex-grow: 1; height: 100%;">
+                        <div class="profile-item-avatar" style="background-color: ${p.avatarColor};">
+                            <i class="fa-solid fa-user"></i>
+                        </div>
+                        <span class="profile-item-name">${p.name}</span>
                     </div>
-                    <span class="profile-item-name">${p.name}</span>
+                    <button class="btn-delete-profile" data-id="${p.id}" title="프로필 삭제" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: var(--transition-smooth);">
+                        <i class="fa-regular fa-trash-can"></i>
+                    </button>
                 </div>
             `;
         }).join('');
         
-        const profileItems = profileListEl.querySelectorAll('.profile-item');
-        profileItems.forEach(item => {
-            item.addEventListener('click', (e) => {
+        const profileItems = profileListEl.querySelectorAll('.profile-item-click-zone');
+        profileItems.forEach(zone => {
+            zone.addEventListener('click', (e) => {
                 e.stopPropagation();
+                const item = zone.closest('.profile-item');
                 const profileId = item.getAttribute('data-id');
                 switchProfile(profileId);
                 const dropdown = document.getElementById('profile-dropdown');
                 if (dropdown) dropdown.classList.remove('active');
+            });
+        });
+
+        const deleteButtons = profileListEl.querySelectorAll('.btn-delete-profile');
+        deleteButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const profileId = btn.getAttribute('data-id');
+                deleteProfile(profileId);
             });
         });
     }
