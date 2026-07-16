@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const payload = {
-            state: cleanState,
+            stateData: JSON.stringify(cleanState),
             timestamp: Date.now()
         };
         
@@ -274,8 +274,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 const resData = await response.json();
                 let fetchedState = null;
-                if (resData && resData.data && resData.data.state) {
-                    fetchedState = resData.data.state;
+                if (resData && resData.data && resData.data.stateData) {
+                    try {
+                        fetchedState = JSON.parse(resData.data.stateData);
+                    } catch(e) {
+                        console.error("Failed to parse stateData JSON:", e);
+                    }
                 }
                 
                 if (fetchedState && Array.isArray(fetchedState.profiles) && fetchedState.activeProfileId) {
@@ -1600,7 +1604,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
                 const payload = {
-                    state: cleanState,
+                    stateData: JSON.stringify(cleanState),
                     timestamp: Date.now()
                 };
                 const payloadWrapper = {
@@ -1632,11 +1636,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             
                             setInterval(loadFromCloud, 5000);
+                        } else {
+                            showToast("공유 공간 생성 응답 분석에 실패했습니다.", "error");
+                            return;
                         }
+                    } else {
+                        showToast("공유 공간 생성 요청이 서버에서 거부되었습니다.", "error");
+                        return;
                     }
                 } catch (err) {
                     console.error("Failed to create cloud room:", err);
-                    showToast("공유 공간 생성에 실패했습니다.", "error");
+                    showToast("공유 공간 생성 네트워크 오류가 발생했습니다.", "error");
                     return;
                 }
             }
