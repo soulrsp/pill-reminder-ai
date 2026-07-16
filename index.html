@@ -41,11 +41,20 @@
                 </a>
             </nav>
 
-            <div class="profile-area">
-                <div class="profile-avatar"><i class="fa-solid fa-user-circle"></i></div>
+            <div class="profile-area" id="profile-area">
+                <div class="profile-avatar" id="profile-current-avatar"><i class="fa-solid fa-user-circle"></i></div>
                 <div class="profile-info">
-                    <div class="profile-name">사용자 님</div>
+                    <div class="profile-name" id="profile-current-name">사용자 님</div>
                     <div class="profile-status">오늘 복용률 0%</div>
+                </div>
+                <!-- Profile List Dropdown -->
+                <div id="profile-dropdown" class="profile-dropdown">
+                    <div id="profile-list" class="profile-list">
+                        <!-- Dynamic list of profiles will be loaded here -->
+                    </div>
+                    <button id="btn-add-profile" class="btn-add-profile" type="button">
+                        <i class="fa-solid fa-user-plus"></i> 새 프로필 추가
+                    </button>
                 </div>
             </div>
         </aside>
@@ -498,7 +507,45 @@
         </div>
     </div>
 
+
+    <!-- Profile Add Modal -->
+    <div id="profile-modal" class="profile-modal hidden">
+        <div class="profile-modal-card glass-card">
+            <div class="profile-modal-glow"></div>
+            <div class="profile-modal-header">
+                <i class="fa-solid fa-user-plus profile-modal-icon"></i>
+                <h3>새 프로필 추가</h3>
+            </div>
+            <div class="profile-modal-body">
+                <div class="form-group">
+                    <label for="new-profile-name">프로필 이름</label>
+                    <div class="form-input-wrapper">
+                        <i class="fa-solid fa-user"></i>
+                        <input type="text" id="new-profile-name" placeholder="이름을 입력하세요 (예: 엄마, 나, 동생)" required>
+                    </div>
+                </div>
+                <div class="form-group color-preset-group">
+                    <label>테마 색상 선택</label>
+                    <div class="color-presets">
+                        <button type="button" class="color-preset-btn active" data-color="#6366f1" style="--preset-color: #6366f1;"></button>
+                        <button type="button" class="color-preset-btn" data-color="#14b8a6" style="--preset-color: #14b8a6;"></button>
+                        <button type="button" class="color-preset-btn" data-color="#f43f5e" style="--preset-color: #f43f5e;"></button>
+                        <button type="button" class="color-preset-btn" data-color="#f59e0b" style="--preset-color: #f59e0b;"></button>
+                        <button type="button" class="color-preset-btn" data-color="#10b981" style="--preset-color: #10b981;"></button>
+                        <button type="button" class="color-preset-btn" data-color="#8b5cf6" style="--preset-color: #8b5cf6;"></button>
+                    </div>
+                </div>
+            </div>
+            <div class="profile-modal-footer">
+                <button id="btn-create-profile" class="btn-primary" type="button"><i class="fa-solid fa-check"></i> 생성 완료</button>
+                <button id="btn-cancel-profile" class="btn-secondary" type="button">취소</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Core App JS -->
     <script src="app.js"></script>
+
+
 </body>
 </html>
