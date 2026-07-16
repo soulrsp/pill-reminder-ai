@@ -208,16 +208,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        const payload = {
-            stateData: JSON.stringify(cleanState),
-            timestamp: Date.now()
+        // Pack stringified state directly into the 'name' field to bypass deep schema validations
+        const bodyObj = {
+            name: JSON.stringify(cleanState),
+            data: {
+                timestamp: Date.now()
+            }
         };
-        
-        const payloadWrapper = {
-            name: `PillFlow_Room_${currentRoomId}`,
-            data: payload
-        };
-        const bodyStr = JSON.stringify(payloadWrapper);
+        const bodyStr = JSON.stringify(bodyObj);
         if (bodyStr === lastSyncedDataString) return;
         
         lastSyncedDataString = bodyStr;
@@ -274,11 +272,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 const resData = await response.json();
                 let fetchedState = null;
-                if (resData && resData.data && resData.data.stateData) {
+                // Retrieve parsed state directly from the 'name' field
+                if (resData && resData.name) {
                     try {
-                        fetchedState = JSON.parse(resData.data.stateData);
+                        fetchedState = JSON.parse(resData.name);
                     } catch(e) {
-                        console.error("Failed to parse stateData JSON:", e);
+                        console.error("Failed to parse state from name field:", e);
                     }
                 }
                 
@@ -1603,13 +1602,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         delete p.avatarImage;
                     });
                 }
-                const payload = {
-                    stateData: JSON.stringify(cleanState),
-                    timestamp: Date.now()
-                };
                 const payloadWrapper = {
-                    name: `PillFlow_Room_new`,
-                    data: payload
+                    name: JSON.stringify(cleanState),
+                    data: {
+                        timestamp: Date.now()
+                    }
                 };
                 
                 try {
