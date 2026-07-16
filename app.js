@@ -219,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lastSyncedDataString = bodyStr;
         try {
             const response = await fetch(url, {
-                method: 'PUT',
+                method: 'POST',
                 body: bodyStr
             });
             if (!response.ok) {
