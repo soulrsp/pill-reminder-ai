@@ -908,10 +908,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const totalQty = days * doseNum * dailyFreqMultiplier;
             
-            // Expiry date (1 year from today as default)
-            const expiry = new Date();
-            expiry.setFullYear(expiry.getFullYear() + 1);
-            const expiryDateStr = expiry.toISOString().split('T')[0];
+            // Expiry date (Default to 2030-12-31)
+            const expiryDateStr = "2030-12-31";
             
             tempAnalyzedPills.push({
                 id: `pill-analyzed-${Date.now()}-${index}`,
@@ -1185,6 +1183,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         ${warningBanner}
                         <div class="pill-item-footer">
+                            <button class="btn-edit-pill btn-icon-only" data-id="${pill.id}" title="약품 수정">
+                                <i class="fa-regular fa-pen-to-square"></i>
+                            </button>
                             <button class="btn-delete-pill btn-icon-only" data-id="${pill.id}" title="약품 삭제">
                                 <i class="fa-regular fa-trash-can"></i>
                             </button>
@@ -1193,6 +1194,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }).join('');
             
+            // Edit button binding
+            const editButtons = cabinetGridEl.querySelectorAll('.btn-edit-pill');
+            editButtons.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const pillId = btn.getAttribute('data-id');
+                    openEditPillModal(pillId);
+                });
+            });
+
             // Delete button binding
             const deleteButtons = cabinetGridEl.querySelectorAll('.btn-delete-pill');
             deleteButtons.forEach(btn => {
@@ -1234,6 +1244,133 @@ document.addEventListener('DOMContentLoaded', () => {
             renderDashboard();
             showToast('약품이 보관함에서 삭제되었습니다.', 'info');
         }
+    }
+
+    // ==========================================
+    // 9.5. Edit Pill Modal Control
+    // ==========================================
+    let editingPillId = null;
+    const editPillModal = document.getElementById('edit-pill-modal');
+    const btnSaveEditPill = document.getElementById('btn-save-edit-pill');
+    const btnCancelEditPill = document.getElementById('btn-cancel-edit-pill');
+
+    function openEditPillModal(pillId) {
+        const activeProfileId = state.activeProfileId;
+        if (!activeProfileId) return;
+
+        const profilePills = state.pills[activeProfileId] || [];
+        const pill = profilePills.find(p => p.id === pillId);
+        if (!pill) return;
+
+        editingPillId = pillId;
+
+        // Set inputs to current values
+        document.getElementById('edit-pill-name-input').value = pill.name;
+        document.getElementById('edit-pill-dosage-input').value = pill.dosage;
+        document.getElementById('edit-pill-freq-select').value = pill.frequency;
+        document.getElementById('edit-pill-total-input').value = pill.totalQty;
+        document.getElementById('edit-pill-current-input').value = pill.currentQty;
+        document.getElementById('edit-pill-expiry-input').value = pill.expiryDate || "2030-12-31";
+
+        if (editPillModal) {
+            editPillModal.classList.remove('hidden');
+        }
+    }
+
+    if (btnCancelEditPill && editPillModal) {
+        btnCancelEditPill.addEventListener('click', () => {
+            editPillModal.classList.add('hidden');
+            editingPillId = null;
+        });
+    }
+
+    if (btnSaveEditPill && editPillModal) {
+        btnSaveEditPill.addEventListener('click', () => {
+            const activeProfileId = state.activeProfileId;
+            if (!activeProfileId || !editingPillId) return;
+
+            const profilePills = state.pills[activeProfileId] || [];
+            const pillIndex = profilePills.findIndex(p => p.id === editingPillId);
+            if (pillIndex === -1) return;
+
+            const name = document.getElementById('edit-pill-name-input').value.trim();
+            const dosage = document.getElementById('edit-pill-dosage-input').value.trim();
+            const frequency = document.getElementById('edit-pill-freq-select').value;
+            const totalQty = parseInt(document.getElementById('edit-pill-total-input').value, 10);
+            const currentQty = parseInt(document.getElementById('edit-pill-current-input').value, 10);
+            const expiryDate = document.getElementById('edit-pill-expiry-input').value;
+
+            if (!name || !dosage || isNaN(totalQty) || isNaN(currentQty) || !expiryDate) {
+                showToast('모든 입력 값을 올바르게 기입해 주세요.', 'warning');
+                return;
+            }
+
+            const oldFreq = profilePills[pillIndex].frequency;
+
+            // Update pill in state
+            profilePills[pillIndex].name = name;
+            profilePills[pillIndex].dosage = dosage;
+            profilePills[pillIndex].frequency = frequency;
+            profilePills[pillIndex].totalQty = totalQty;
+            profilePills[pillIndex].currentQty = currentQty;
+            profilePills[pillIndex].expiryDate = expiryDate;
+
+            // Sync today's schedule for unchanged/pending intake records of this pill
+            const todayStr = getTodayString();
+            if (state.intakeRecords[activeProfileId] && state.intakeRecords[activeProfileId][todayStr]) {
+                let records = state.intakeRecords[activeProfileId][todayStr];
+
+                // If frequency has changed, recreate pending doses for today
+                if (oldFreq !== frequency) {
+                    // Remove pending records for this pill
+                    records = records.filter(d => !(d.pillId === editingPillId && d.status !== 'taken'));
+
+                    // Re-add pending records with new times/frequency
+                    if (frequency !== 'as-needed') {
+                        const times = getScheduleTimes(frequency);
+                        times.forEach(time => {
+                            const doseId = `dose-${editingPillId}-${time}`;
+                            
+                            // Check if a completed ('taken') record already exists for this exact time
+                            const alreadyTaken = records.some(d => d.pillId === editingPillId && d.time === time && d.status === 'taken');
+                            if (!alreadyTaken) {
+                                records.push({
+                                    id: doseId,
+                                    pillId: editingPillId,
+                                    name: name,
+                                    dosage: dosage,
+                                    time: time,
+                                    period: getPeriodFromTime(time),
+                                    instruction: getInstructionText(name, dosage, time),
+                                    status: 'pending'
+                                });
+                            }
+                        });
+                    }
+                } else {
+                    // Update name, dosage, instructions for remaining pending records of this pill
+                    records.forEach(d => {
+                        if (d.pillId === editingPillId && d.status !== 'taken') {
+                            d.name = name;
+                            d.dosage = dosage;
+                            d.instruction = getInstructionText(name, dosage, d.time);
+                        }
+                    });
+                }
+                
+                // Sort records by time again
+                records.sort((a, b) => a.time.localeCompare(b.time));
+                state.intakeRecords[activeProfileId][todayStr] = records;
+            }
+
+            saveState();
+            renderCabinet();
+            renderDashboard();
+
+            showToast(`"${name}" 의약품 정보가 정상적으로 수정되었습니다.`, 'success');
+            editPillModal.classList.add('hidden');
+            editingPillId = null;
+        });
     }
 
     // ==========================================
