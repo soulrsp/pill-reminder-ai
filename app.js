@@ -200,8 +200,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function saveToCloud() {
         if (!currentRoomId) return;
         const url = `https://kvdb.io/Sf98ZTAnze7jR199cZxpRm/${currentRoomId}`;
+        
+        // Deep copy state and strip heavy Base64 image payload to prevent HTTP 413 (Payload Too Large)
+        const cleanState = JSON.parse(JSON.stringify(state));
+        if (cleanState.profiles && Array.isArray(cleanState.profiles)) {
+            cleanState.profiles.forEach(p => {
+                delete p.avatarImage;
+            });
+        }
+        
         const payload = {
-            state: state,
+            state: cleanState,
             timestamp: Date.now()
         };
         const bodyStr = JSON.stringify(payload);
@@ -267,6 +276,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 if (fetchedState && Array.isArray(fetchedState.profiles) && fetchedState.activeProfileId) {
+                    // Merge local avatar images back into the fetched state (to preserve local photos)
+                    fetchedState.profiles.forEach(fetchedProfile => {
+                        const localProfile = state.profiles.find(lp => lp.id === fetchedProfile.id);
+                        if (localProfile && localProfile.avatarImage) {
+                            fetchedProfile.avatarImage = localProfile.avatarImage;
+                        }
+                    });
+                    
                     const stateStr = JSON.stringify(fetchedState);
                     const localStateStr = JSON.stringify(state);
                     
