@@ -199,6 +199,91 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const FIREBASE_DB_URL = 'https://pill-reminder-ai-43ffa-default-rtdb.asia-southeast1.firebasedatabase.app';
 
+    // ── 이미지 자동 압축 (최대 200×200px, JPEG 품질 70%) ──
+    function compressImage(file, maxWidth, maxHeight, quality) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    let w = img.width, h = img.height;
+                    if (w > maxWidth || h > maxHeight) {
+                        const ratio = Math.min(maxWidth / w, maxHeight / h);
+                        w = Math.round(w * ratio);
+                        h = Math.round(h * ratio);
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', quality));
+                };
+                img.onerror = reject;
+                img.src = e.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // ── Firebase 사진 저장 (프로필별 별도 경로) ──
+    async function savePhotoToCloud(profileId, base64Image) {
+        if (!currentRoomId) return;
+        try {
+            const url = `${FIREBASE_DB_URL}/rooms/${encodeURIComponent(currentRoomId)}/photos/${encodeURIComponent(profileId)}.json`;
+            const body = JSON.stringify({ img: base64Image || null, ts: Date.now() });
+            await fetch(url, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body
+            });
+        } catch (e) {
+            console.error('Firebase photo save error:', e);
+        }
+    }
+
+    // ── Firebase 사진 로드 (모든 프로필 사진 동기화) ──
+    async function loadPhotosFromCloud() {
+        if (!currentRoomId) return;
+        try {
+            const url = `${FIREBASE_DB_URL}/rooms/${encodeURIComponent(currentRoomId)}/photos.json?t=${Date.now()}`;
+            const response = await fetch(url, { cache: 'no-store' });
+            if (!response.ok) return;
+            const photos = await response.json();
+            if (!photos) return;
+            let changed = false;
+            state.profiles.forEach(profile => {
+                const entry = photos[profile.id];
+                if (entry && entry.img !== profile.avatarImage) {
+                    profile.avatarImage = entry.img;
+                    changed = true;
+                }
+            });
+            if (changed) {
+                localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(state.profiles));
+                renderProfileList();
+                // Refresh active profile avatar
+                const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
+                if (activeProfile) {
+                    const el = document.getElementById('profile-current-avatar');
+                    if (el) {
+                        if (activeProfile.avatarImage) {
+                            el.innerHTML = `<img class="profile-avatar-img" src="${activeProfile.avatarImage}">`;
+                            el.style.backgroundColor = 'transparent';
+                        } else {
+                            el.innerHTML = `<i class="fa-solid fa-user-circle"></i>`;
+                            el.style.color = activeProfile.avatarColor;
+                            el.style.backgroundColor = '';
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Firebase photo load error:', e);
+        }
+    }
+
     async function saveToCloud() {
         if (!currentRoomId) return;
         
@@ -312,6 +397,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 lastSyncedDataString = JSON.stringify({ stateData: JSON.stringify(fetchedState), timestamp: resData.timestamp || Date.now() });
+                // 사진도 동기화
+                loadPhotosFromCloud();
             }
         } catch (e) {
             console.error('Firebase load error:', e);
@@ -1684,20 +1771,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     if (editProfilePhotoInput && editPhotoPreview) {
-        editProfilePhotoInput.addEventListener('change', (e) => {
+        editProfilePhotoInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
-                if (file.size > 2 * 1024 * 1024) {
-                    showToast("이미지 크기는 최대 2MB까지 지원됩니다.", "warning");
+                if (file.size > 10 * 1024 * 1024) {
+                    showToast("이미지 크기는 최대 10MB까지 지원됩니다.", "warning");
                     editProfilePhotoInput.value = "";
                     return;
                 }
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    tempPhotoBase64 = event.target.result;
+                try {
+                    showToast("이미지를 처리하는 중...", "info");
+                    // 200×200px, JPEG 70%로 자동 압축
+                    tempPhotoBase64 = await compressImage(file, 200, 200, 0.7);
                     editPhotoPreview.innerHTML = `<img src="${tempPhotoBase64}" style="width: 100%; height: 100%; object-fit: cover;">`;
-                };
-                reader.readAsDataURL(file);
+                } catch (err) {
+                    console.error('Image compress error:', err);
+                    showToast("이미지 처리에 실패했습니다. 다른 사진을 시도해 주세요.", "error");
+                    editProfilePhotoInput.value = "";
+                }
             }
         });
     }
@@ -1717,11 +1808,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     if (btnSaveProfilePhoto && profilePhotoModal) {
-        btnSaveProfilePhoto.addEventListener('click', () => {
+        btnSaveProfilePhoto.addEventListener('click', async () => {
             const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
             if (activeProfile) {
                 activeProfile.avatarImage = tempPhotoBase64;
                 saveState();
+                
+                // Firebase에 사진 동기화 업로드
+                if (currentRoomId) {
+                    showToast("사진을 동기화 중...", "info");
+                    await savePhotoToCloud(activeProfile.id, tempPhotoBase64);
+                    showToast("프로필 사진이 저장되고 동기화되었습니다.", "success");
+                } else {
+                    showToast("프로필 사진이 성공적으로 수정되었습니다.", "success");
+                }
                 
                 // Refresh headers and dropdown
                 const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
@@ -1737,7 +1837,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 renderProfileList();
-                showToast("프로필 사진이 성공적으로 수정되었습니다.", "success");
             }
             profilePhotoModal.classList.add('hidden');
         });
@@ -1784,10 +1883,13 @@ document.addEventListener('DOMContentLoaded', () => {
             renderCabinet();
             renderChat();
             renderProfileList();
+            // 사진도 시작 시 즉시 동기화
+            loadPhotosFromCloud();
         });
         
-        // Start cloud polling every 5 seconds
+        // Start cloud polling every 5 seconds (state + photos)
         setInterval(loadFromCloud, 5000);
+        setInterval(loadPhotosFromCloud, 10000); // 사진은 10초마다 폴링
     } else {
         saveState();
     }
