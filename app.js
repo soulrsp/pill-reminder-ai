@@ -1477,21 +1477,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCreateProfile = document.getElementById('btn-create-profile');
     const newProfileNameInput = document.getElementById('new-profile-name');
     const colorPresets = document.querySelectorAll('.color-preset-btn');
-    const newProfileImageInput = document.getElementById('new-profile-image');
-    const profileImagePreview = document.getElementById('profile-image-preview');
     
     let selectedColor = "#6366f1";
-    let uploadedProfileImageBase64 = null;
     
     if (btnAddProfile && profileModal) {
         btnAddProfile.addEventListener('click', (e) => {
             e.stopPropagation();
             if (newProfileNameInput) newProfileNameInput.value = "";
-            if (newProfileImageInput) newProfileImageInput.value = "";
-            if (profileImagePreview) {
-                profileImagePreview.innerHTML = `<i class="fa-solid fa-camera"></i>`;
-            }
-            uploadedProfileImageBase64 = null;
             
             colorPresets.forEach(preset => {
                 preset.classList.remove('active');
@@ -1502,26 +1494,6 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedColor = "#6366f1";
             profileModal.classList.remove('hidden');
             if (profileDropdown) profileDropdown.classList.remove('active');
-        });
-    }
-    
-    // File upload reader
-    if (newProfileImageInput && profileImagePreview) {
-        newProfileImageInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                if (file.size > 2 * 1024 * 1024) {
-                    showToast("이미지 크기는 최대 2MB까지 지원됩니다.", "warning");
-                    newProfileImageInput.value = "";
-                    return;
-                }
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    uploadedProfileImageBase64 = event.target.result;
-                    profileImagePreview.innerHTML = `<img src="${uploadedProfileImageBase64}" style="width: 100%; height: 100%; object-fit: cover;">`;
-                };
-                reader.readAsDataURL(file);
-            }
         });
     }
     
@@ -1546,8 +1518,102 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast("프로필 이름을 입력해 주세요.", "warning");
                 return;
             }
-            createProfile(name, selectedColor, uploadedProfileImageBase64);
+            createProfile(name, selectedColor, null);
             profileModal.classList.add('hidden');
+        });
+    }
+
+    // ==========================================
+    // 12.5 Profile Photo Edit Controls
+    // ==========================================
+    const btnEditProfilePhoto = document.getElementById('btn-edit-profile-photo');
+    const profilePhotoModal = document.getElementById('profile-photo-modal');
+    const btnCancelProfilePhoto = document.getElementById('btn-cancel-profile-photo');
+    const btnSaveProfilePhoto = document.getElementById('btn-save-profile-photo');
+    const btnDeleteCurrentPhoto = document.getElementById('btn-delete-current-photo');
+    const editProfilePhotoInput = document.getElementById('edit-profile-photo-input');
+    const editPhotoPreview = document.getElementById('edit-photo-preview');
+    
+    let tempPhotoBase64 = null;
+    
+    if (btnEditProfilePhoto && profilePhotoModal) {
+        btnEditProfilePhoto.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
+            if (!activeProfile) return;
+            
+            tempPhotoBase64 = activeProfile.avatarImage;
+            if (editProfilePhotoInput) editProfilePhotoInput.value = "";
+            
+            if (editPhotoPreview) {
+                if (tempPhotoBase64) {
+                    editPhotoPreview.innerHTML = `<img src="${tempPhotoBase64}" style="width: 100%; height: 100%; object-fit: cover;">`;
+                } else {
+                    editPhotoPreview.innerHTML = `<i class="fa-solid fa-user"></i>`;
+                }
+            }
+            profilePhotoModal.classList.remove('hidden');
+            if (profileDropdown) profileDropdown.classList.remove('active');
+        });
+    }
+    
+    if (editProfilePhotoInput && editPhotoPreview) {
+        editProfilePhotoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                if (file.size > 2 * 1024 * 1024) {
+                    showToast("이미지 크기는 최대 2MB까지 지원됩니다.", "warning");
+                    editProfilePhotoInput.value = "";
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    tempPhotoBase64 = event.target.result;
+                    editPhotoPreview.innerHTML = `<img src="${tempPhotoBase64}" style="width: 100%; height: 100%; object-fit: cover;">`;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+    
+    if (btnDeleteCurrentPhoto && editPhotoPreview) {
+        btnDeleteCurrentPhoto.addEventListener('click', () => {
+            tempPhotoBase64 = null;
+            editPhotoPreview.innerHTML = `<i class="fa-solid fa-user"></i>`;
+            if (editProfilePhotoInput) editProfilePhotoInput.value = "";
+        });
+    }
+    
+    if (btnCancelProfilePhoto && profilePhotoModal) {
+        btnCancelProfilePhoto.addEventListener('click', () => {
+            profilePhotoModal.classList.add('hidden');
+        });
+    }
+    
+    if (btnSaveProfilePhoto && profilePhotoModal) {
+        btnSaveProfilePhoto.addEventListener('click', () => {
+            const activeProfile = state.profiles.find(p => p.id === state.activeProfileId);
+            if (activeProfile) {
+                activeProfile.avatarImage = tempPhotoBase64;
+                saveState();
+                
+                // Refresh headers and dropdown
+                const activeProfileAvatarEl = document.getElementById('profile-current-avatar');
+                if (activeProfileAvatarEl) {
+                    if (tempPhotoBase64) {
+                        activeProfileAvatarEl.innerHTML = `<img class="profile-avatar-img" src="${tempPhotoBase64}">`;
+                        activeProfileAvatarEl.style.backgroundColor = 'transparent';
+                    } else {
+                        activeProfileAvatarEl.innerHTML = `<i class="fa-solid fa-user-circle"></i>`;
+                        activeProfileAvatarEl.style.color = activeProfile.avatarColor;
+                        activeProfileAvatarEl.style.backgroundColor = '';
+                    }
+                }
+                
+                renderProfileList();
+                showToast("프로필 사진이 성공적으로 수정되었습니다.", "success");
+            }
+            profilePhotoModal.classList.add('hidden');
         });
     }
 
