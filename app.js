@@ -1348,7 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const profileId = item.getAttribute('data-id');
                 switchProfile(profileId);
                 const dropdown = document.getElementById('profile-dropdown');
-                if (dropdown) dropdown.classList.add('hidden');
+                if (dropdown) dropdown.classList.remove('active');
             });
         });
     }
@@ -1360,11 +1360,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (profileArea && profileDropdown) {
         profileArea.addEventListener('click', (e) => {
             e.stopPropagation();
-            profileDropdown.classList.toggle('hidden');
+            profileDropdown.classList.toggle('active');
         });
         
         document.addEventListener('click', () => {
-            profileDropdown.classList.add('hidden');
+            profileDropdown.classList.remove('active');
         });
     }
 
@@ -1390,7 +1390,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             selectedColor = "#6366f1";
             profileModal.classList.remove('hidden');
-            if (profileDropdown) profileDropdown.classList.add('hidden');
+            if (profileDropdown) profileDropdown.classList.remove('active');
         });
     }
     
